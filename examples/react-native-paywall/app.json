@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "MarketMorph Paywall Verification",
+    "slug": "marketmorph-paywall-verification",
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "2.0",
+  "productName": "Example Learning",
+  "description": "Fictional market-specific import for development testing.",
+  "sourceDataMarket": "US",
+  "sourceDataLanguage": "en",
+  "benefits": [
+    {
+      "id": "practice",
+      "description": "Practice from your own notes."
+    }
+  ],
+  "offersByMarket": {
+    "US": {
+      "plans": [
+        {
+          "id": "us-monthly-example",
+          "name": "Monthly",
+          "productId": "sandbox.example.us.month",
+          "benefitIds": [
+            "practice"
+          ],
+          "price": {
+            "billingPeriod": "month",
+            "currency": "USD",
+            "amountMinor": 950
+          }
+        }
+      ]
+    },
+    "HK": {
+      "plans": [
+        {
+          "id": "hk-annual-example",
+          "name": "Annual",
+          "productId": "sandbox.example.hk.year",
+          "benefitIds": [
+            "practice"
+          ],
+          "price": {
+            "billingPeriod": "year",
+            "currency": "HKD",
+            "amountMinor": 59900
+          },
+          "trial": {
+            "days": 5,
+            "eligibility": "New members only.",
+            "renewalDisclosure": "After the trial, the annual subscription renews unless canceled before the trial ends."
+          }
+        }
+      ]
+    }
+  }
+}

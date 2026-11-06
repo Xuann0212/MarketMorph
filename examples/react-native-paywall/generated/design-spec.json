@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "1.0",
+  "product": {
+    "name": "Example Learning"
+  },
+  "source": {
+    "type": "sample",
+    "name": "LearnLoop AI",
+    "market": "US",
+    "language": "en"
+  },
+  "targetMarket": "HK",
+  "outputLanguage": "zh-Hant",
+  "design": {
+    "schemaVersion": "1.0",
+    "layout": "benefits-first",
+    "sectionOrder": [
+      "headline",
+      "benefits",
+      "plans",
+      "cta",
+      "trial",
+      "disclosures"
+    ],
+    "theme": {
+      "background": "#FFFFFF",
+      "surface": "#FFFFFF",
+      "text": "#000000",
+      "accent": "#6750BC"
+    },
+    "featuredPlanId": "hk-annual-example",
+    "planOrder": [
+      "hk-annual-example"
+    ],
+    "headline": "Example Learning，讓每一步更進一步。",
+    "benefitsCopy": [
+      {
+        "benefitId": "practice",
+        "text": "Practice from your own notes."
+      }
+    ],
+    "ctaText": "查看已確認的方案",
+    "designReasons": [
+      {
+        "field": "layout",
+        "reason": "示例規則依 preserve 目標選用 benefits-first；沒有呼叫 AI。"
+      },
+      {
+        "field": "theme",
+        "reason": "使用已設定的品牌色或預設色，並排除禁止色。"
+      },
+      {
+        "field": "featuredPlanId",
+        "reason": "按設計目標選擇已確認的方案，價格與資格取自已確認資料。"
+      },
+      {
+        "field": "copy",
+        "reason": "標題及 CTA 使用預設 zh-Hant 模板；權益保留已確認原文。補充要求與風格僅保存，未做語義理解或圖片分析。"
+      }
+    ]
+  },
+  "plans": [
+    {
+      "id": "hk-annual-example",
+      "name": "Annual",
+      "productId": "sandbox.example.hk.year",
+      "price": {
+        "currency": "HKD",
+        "amountMinor": 61250,
+        "billingPeriod": "year"
+      },
+      "previewPrice": "HKD 612.50",
+      "periodLabel": "每年計費",
+      "benefitIds": [
+        "practice"
+      ]
+    }
+  ],
+  "terms": {
+    "trial": [
+      "5 天免費試用 · Annual\nNew members only."
+    ],
+    "disclosures": [
+      "Annual · After the trial, the annual subscription renews unless canceled before the trial ends."
+    ]
+  },
+  "interactions": {
+    "purchase": "select-plan-and-call-host",
+    "restore": "恢復購買",
+    "close": "關閉",
+    "storePriceRequired": true,
+    "mappingComplete": true
+  },
+  "provenance": {
+    "mode": "demo",
+    "reviewRequired": true,
+    "simulatedFacts": true
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.next-serial/
+out/
+.env*
+!.env.example
+*.tsbuildinfo
+coverage/
+artifacts/
+.npm-cache/
+.vercel/
+/docs/*
+!/docs/DEPLOYMENT.md

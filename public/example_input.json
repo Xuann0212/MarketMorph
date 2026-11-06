@@ -1,0 +1,128 @@
+{
+  "schemaVersion": "1.0",
+  "simulationNotice": "SIMULATED COURSE DATA: LearnLoop is fictional. All prices, benefits and subscription terms are mock approved facts, not real offers. Market prices are independently preset, never converted.",
+  "input": {
+    "schemaVersion": "1.0",
+    "dataMode": "simulation",
+    "productName": "LearnLoop AI",
+    "productCategory": "AI learning & study",
+    "productDescription": "協助用戶溫習筆記、練習所學概念，並建立持續學習的習慣。",
+    "targetAudience": "University students and early-career professionals learning in short daily sessions.",
+    "targetMarket": "US",
+    "outputLanguage": "en",
+    "designGoal": "annual",
+    "brandStyle": "Calm, trustworthy and encouraging. Clear typography and generous spacing.",
+    "brandColors": {
+      "allowed": ["#2563EB", "#0F172A", "#FFFFFF", "#EFF6FF"],
+      "forbidden": ["#FF0000", "#FF00FF"],
+      "backgroundPreference": "Light blue or white background; restrained blue accents, no gradients."
+    },
+    "subscriptionPlans": [
+      {
+        "id": "us-monthly",
+        "name": "Monthly",
+        "market": "US",
+        "price": {
+          "currency": "USD",
+          "amountMinor": 999,
+          "billingPeriod": "month"
+        }
+      },
+      {
+        "id": "us-annual",
+        "name": "Annual",
+        "market": "US",
+        "price": {
+          "currency": "USD",
+          "amountMinor": 7999,
+          "billingPeriod": "year"
+        }
+      }
+    ],
+    "trialTerms": {
+      "days": 3,
+      "eligibility": "New LearnLoop subscribers only, once per person. Trial applies to the annual plan only.",
+      "renewalDisclosure": "After the 3-day free trial, the annual plan automatically renews at USD 79.99 per year unless canceled before the trial ends. Monthly plan: USD 9.99 per month, no free trial.",
+      "eligiblePlanIds": ["us-annual"]
+    },
+    "benefits": [
+      {
+        "id": "practice",
+        "description": "Generate practice quizzes from your own study notes."
+      },
+      {
+        "id": "review",
+        "description": "Review concepts with AI-assisted explanations."
+      },
+      {
+        "id": "routine",
+        "description": "Track your daily study sessions and learning streaks."
+      }
+    ],
+    "additionalInstructions": "Emphasize a sustainable learning routine. Do not promise grades, invent benefits, or use countdowns or false scarcity."
+  },
+  "markets": {
+    "US": {
+      "outputLanguage": "en",
+      "subscriptionPlans": [
+        {
+          "id": "us-monthly",
+          "name": "Monthly",
+          "market": "US",
+          "price": {
+            "currency": "USD",
+            "amountMinor": 999,
+            "billingPeriod": "month"
+          }
+        },
+        {
+          "id": "us-annual",
+          "name": "Annual",
+          "market": "US",
+          "price": {
+            "currency": "USD",
+            "amountMinor": 7999,
+            "billingPeriod": "year"
+          }
+        }
+      ],
+      "trialTerms": {
+        "days": 3,
+        "eligibility": "New LearnLoop subscribers only, once per person. Trial applies to the annual plan only.",
+        "renewalDisclosure": "After the 3-day free trial, the annual plan automatically renews at USD 79.99 per year unless canceled before the trial ends. Monthly plan: USD 9.99 per month, no free trial.",
+        "eligiblePlanIds": ["us-annual"]
+      }
+    },
+    "HK": {
+      "outputLanguage": "zh-Hant",
+      "subscriptionPlans": [
+        {
+          "id": "hk-monthly",
+          "name": "月付方案",
+          "market": "HK",
+          "price": {
+            "currency": "HKD",
+            "amountMinor": 7800,
+            "billingPeriod": "month"
+          }
+        },
+        {
+          "id": "hk-annual",
+          "name": "年付方案",
+          "market": "HK",
+          "price": {
+            "currency": "HKD",
+            "amountMinor": 58800,
+            "billingPeriod": "year"
+          }
+        }
+      ],
+      "trialTerms": {
+        "days": 3,
+        "eligibility": "僅限從未訂閱 LearnLoop 的新用戶，每人一次；只適用於年付方案。",
+        "renewalDisclosure": "3 天免費試用結束後，年付方案將自動以每年 HKD 588.00 續訂，除非在試用結束前取消。月付方案為每月 HKD 78.00，不設免費試用。",
+        "eligiblePlanIds": ["hk-annual"]
+      }
+    }
+  }
+}

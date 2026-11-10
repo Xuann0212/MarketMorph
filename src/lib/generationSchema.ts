@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { validateInput } from "./inputValidation.ts";
-import { validateDesignSpec } from "./demoEngine.ts";
+import { contrast, validateDesignSpec } from "./demoEngine.ts";
 import { BILLING_PERIODS, DESIGN_GOALS, LANGUAGES, MARKETS, MAX_PLANS } from "./designSchema.ts";
 import type { DesignSpec, InputPayload } from "./designSchema.ts";
+import { matchesOutputLanguage } from "./paywallContent.ts";
+import { wantsChristmasBackground } from "./christmasBackground.ts";
 export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 export const MAX_MODEL_IMAGE_BYTES = 2800000;
 const text = (max = 5000) =>
@@ -111,6 +113,7 @@ export const DesignSpecSchema = z
     theme: z
       .object({ background: hex, surface: hex, text: hex, accent: hex })
       .strict(),
+    backgroundPattern: z.literal("christmas").optional(),
     featuredPlanId: text(100),
     planOrder: z.array(text(100)).min(1).max(MAX_PLANS),
     headline: modelText(500),
@@ -137,6 +140,11 @@ export const ModelOutputSchema = z
       .strict(),
   })
   .strict();
+export const UploadedSourceSchema = z.object({
+  kind: z.literal("image"),
+  id: text(200),
+  dataUrl: z.string().max(Math.ceil((MAX_MODEL_IMAGE_BYTES * 4) / 3) + 100),
+}).strict();
 export const GenerateRequestSchema = z
   .object({
     input: InputSchema,
@@ -145,15 +153,7 @@ export const GenerateRequestSchema = z
       .strict(),
     source: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("demo"), id: text(200) }).strict(),
-      z
-        .object({
-          kind: z.literal("image"),
-          id: text(200),
-          dataUrl: z
-            .string()
-            .max(Math.ceil((MAX_MODEL_IMAGE_BYTES * 4) / 3) + 100),
-        })
-        .strict(),
+      UploadedSourceSchema,
     ]),
   })
   .strict();
@@ -191,5 +191,15 @@ export function validateOutput(
     )
   )
     throw new Error("BUSINESS_COPY");
+  if ([
+    design.headline, design.subtitle ?? "", design.ctaText, ...design.benefitsCopy.map(({ text }) => text),
+  ].some((text) => !matchesOutputLanguage(text, input))) {
+    throw new Error("Use the selected output language (" + input.outputLanguage + ") for every headline, subtitle, button and benefit, even when the source or instructions use another language.");
+  }
+  if (wantsChristmasBackground(input)) {
+    const { background, surface, text, accent } = design.theme;
+    if (Math.min(contrast(background, text), contrast(surface, text), contrast(accent, surface)) < 4.5)
+      throw new Error("Use approved colours with contrast of at least 4.5:1 for background/text, surface/text, and CTA accent/surface.");
+  }
   return { design, visualAnalysis: result.visualAnalysis };
 }

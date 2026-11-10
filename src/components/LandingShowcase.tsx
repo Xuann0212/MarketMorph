@@ -18,7 +18,7 @@ export default function LandingShowcase() {
         <div className="showcase-heading">
           <div>
             <span className="kicker">設計預覽</span>
-            <h2 id="showcase-title">一鍵本地化設計訂閱頁</h2>
+            <h2 id="showcase-title">同一款產品，兩個市場版本</h2>
           </div>
           <p>從同一款應用程式出發，打造適合不同市場的訂閱體驗。</p>
         </div>
@@ -61,7 +61,7 @@ export default function LandingShowcase() {
                     <small>Billed every month</small>
                   </div>
                   <strong>
-                    US$4.99<small>/month</small>
+                    US$9.99<small>/month</small>
                   </strong>
                 </div>
                 <div className="showcase-plan">
@@ -71,7 +71,7 @@ export default function LandingShowcase() {
                     <small>Billed once a year</small>
                   </div>
                   <strong>
-                    US$39.99<small>/year</small>
+                    US$79.99<small>/year</small>
                   </strong>
                 </div>
               </div>
@@ -79,8 +79,8 @@ export default function LandingShowcase() {
                 Continue with Premium <Icon name="arrow" size={14} />
               </button>
               <p className="showcase-terms">
-                3 days for eligible users. Subscription renews automatically
-                unless cancelled before the current period ends.
+                Eligible new subscribers can try the annual plan for 3 days.
+                The plan renews automatically unless cancelled before the trial ends.
               </p>
             </div>
           </article>
@@ -126,7 +126,7 @@ export default function LandingShowcase() {
                     <small>每年收費</small>
                   </div>
                   <strong>
-                    HK$298<small>/年</small>
+                    HK$588<small>/年</small>
                   </strong>
                 </div>
                 <div className="showcase-plan">
@@ -136,7 +136,7 @@ export default function LandingShowcase() {
                     <small>每月收費</small>
                   </div>
                   <strong>
-                    HK$38<small>/月</small>
+                    HK$78<small>/月</small>
                   </strong>
                 </div>
               </div>
@@ -149,7 +149,7 @@ export default function LandingShowcase() {
                 開始進階會籍體驗 <Icon name="arrow" size={14} />
               </button>
               <p className="showcase-terms">
-                符合資格的用戶可試用 3 天。訂閱將自動續期，可於當期結束前取消。
+                符合資格的新用戶可試用年費方案 3 天。試用結束後會自動續訂，可於試用結束前取消。
               </p>
             </div>
           </article>

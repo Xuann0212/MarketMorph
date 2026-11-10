@@ -39,12 +39,12 @@ export default function Landing() {
         <div className="hero-glow glow-one" />
         <div className="hero-glow glow-two" />
         <h1>
-          讓訂閱頁面
+          把現有訂閱頁
           <br />
-          <em>更貼近每個市場</em>
+          <em>改成適合目標市場的版本</em>
         </h1>
         <p className="hero-copy">
-          從內容、版面到配色與訂閱方案，打造更貼合當地市場的訂閱體驗。
+          選擇市場與語言，核對價格和試用條款，再比較設計並匯出交付檔案。
         </p>
         <div
           className={`prompt-shell localization-composer ${
@@ -61,7 +61,7 @@ export default function Landing() {
               ref={promptRef}
               value={store.instructions}
               onChange={(e) => store.setInstructions(e.target.value)}
-              placeholder="補充本地化設計要求……"
+              placeholder="補充 AI 本地化要求（選填）……"
               aria-label="本地化設計要求"
             />
           </div>

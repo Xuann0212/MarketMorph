@@ -1,5 +1,14 @@
-export const nativeTemplate = String.raw`import { useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { christmasPaths, christmasViewBox } from "./christmasBackground.ts";
+import type { DesignSpec } from "./designSchema.ts";
+import { TEXT_SURFACE_THRESHOLD } from "./background.ts";
+
+export function nativeTemplate(pattern: DesignSpec["backgroundPattern"], uploaded = false) {
+  const christmas = !uploaded && pattern === "christmas";
+  const artwork = christmasPaths.map(({ d, opacity }) =>
+    `        <Path d=${JSON.stringify(d)} strokeOpacity={${opacity}} />`,
+  ).join("\n");
+  return String.raw`import { useRef, useState } from "react";
+import { ${uploaded ? "Image, " : ""}Pressable, ScrollView, StyleSheet, Text, View } from "react-native";${christmas ? '\nimport Svg, { Path } from "react-native-svg";' : ""}
 
 type Section = "headline" | "benefits" | "plans" | "trial" | "cta" | "disclosures";
 type Plan = {
@@ -17,7 +26,7 @@ export interface PaywallDesign {
   design: {
     layout: "benefits-first" | "plans-first";
     sectionOrder: readonly Section[];
-    theme: { background: string; surface: string; text: string; accent: string };
+    theme: { background: string; surface: string; text: string; accent: string };${christmas ? '\n    backgroundPattern?: "christmas";' : ""}
     featuredPlanId: string;
     planOrder: readonly string[];
     headline: string;
@@ -27,7 +36,16 @@ export interface PaywallDesign {
   };
   plans: readonly Plan[];
   terms: { trial: readonly string[]; disclosures: readonly string[] };
-  interactions: { restore: string; close: string };
+  interactions: { restore: string; close: string };${uploaded ? `
+  background: {
+    type: "uploaded";
+    assetPath: "react-native/assets/background.png";
+    width: number;
+    height: number;
+    focalPoint: { x: number; y: number };
+    scale: number;
+    overlayOpacity: number;
+  };` : ""}
 }
 export interface StoreProduct {
   productId: string;
@@ -47,7 +65,15 @@ export default function LocalizedPaywall({
   designSpec, products, previewMode = false, onPurchase, onRestore, onClose, onError,
 }: Props) {
   const { design } = designSpec;
-  const { theme } = design;
+  const { theme } = design;${uploaded ? `
+  const background = designSpec.background;
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const coverScale = Math.max(viewport.width / background.width, viewport.height / background.height) * background.scale;
+  const imageWidth = background.width * coverScale;
+  const imageHeight = background.height * coverScale;
+  const textSurface = background.overlayOpacity < ${TEXT_SURFACE_THRESHOLD}
+    ? { backgroundColor: theme.background + "cc", padding: 8, borderRadius: 10 }
+    : undefined;` : ""}
   const [selectedId, setSelectedId] = useState(design.featuredPlanId);
   const [pending, setPending] = useState(false);
   const lock = useRef(false);
@@ -111,16 +137,39 @@ export default function LocalizedPaywall({
   };
 
   return (
-    <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
+    ${uploaded ? `<View style={{ flex: 1, backgroundColor: theme.background, overflow: "hidden" }}
+      onLayout={({ nativeEvent: { layout: { width, height } } }) => setViewport((current) =>
+        current.width === width && current.height === height ? current : { width, height })}>
+      <View style={StyleSheet.absoluteFill} pointerEvents="none" accessibilityElementsHidden>
+        {viewport.width > 0 && viewport.height > 0 && <Image
+          source={require("./assets/background.png")} resizeMode="cover"
+          style={{
+            position: "absolute", width: imageWidth, height: imageHeight,
+            left: (viewport.width - imageWidth) * background.focalPoint.x,
+            top: (viewport.height - imageHeight) * background.focalPoint.y,
+          }}
+        />}
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, opacity: background.overlayOpacity }]} />
+      </View>
+    ` : ""}<ScrollView style={{ backgroundColor: ${uploaded ? '"transparent"' : "theme.background"} }} contentContainerStyle={styles.content}>
+      ${christmas ? `{design.backgroundPattern === "christmas" && (
+      <Svg pointerEvents="none" accessible={false} width="100%" height={66} viewBox="${christmasViewBox}"
+        fill="none" stroke={theme.accent} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+${artwork}
+      </Svg>
+      )}\n      ` : ""}<View style={${uploaded ? "[styles.header, textSurface]" : "styles.header"}}>
         <Text style={[styles.strong, copy]}>{designSpec.product.name}</Text>
         <Pressable accessibilityRole="button" onPress={onClose} style={styles.action}><Text style={copy}>{designSpec.interactions.close}</Text></Pressable>
       </View>
-      {design.sectionOrder.map((section) => <View key={section}>{sections[section]}</View>)}
+      {design.sectionOrder.map((section) => <View key={section}${uploaded ? ` style={
+        section === "headline" || section === "benefits" ||
+        (section === "trial" && designSpec.terms.trial.length > 0) ||
+        (section === "disclosures" && designSpec.terms.disclosures.length > 0) ? textSurface : undefined
+      }` : ""}>{sections[section]}</View>)}
       <Pressable accessibilityRole="button" disabled={pending} onPress={() => void execute(onRestore)} style={styles.action}>
         <Text style={copy}>{designSpec.interactions.restore}</Text>
       </Pressable>
-    </ScrollView>
+    </ScrollView>${uploaded ? "\n    </View>" : ""}
   );
 }
 
@@ -135,12 +184,13 @@ const styles = StyleSheet.create({
   action: { minHeight: 44, justifyContent: "center" },
 });
 `;
+}
 
 export const integrationGuide = String.raw`# MarketMorph React Native 接入
 
 导出组件可用于开发集成，但不代表已通过生产支付及发布审核。
 
-1. 将 react-native/LocalizedPaywall.tsx 和 design-spec.json 复制进已有的 Expo 或 React Native 项目。组件依赖 react 和 react-native。
+1. 将 react-native/LocalizedPaywall.tsx 和 design-spec.json 复制进已有的 Expo 或 React Native 项目。组件依赖 react 和 react-native。如果设计包含圣诞背景图案，还需安装 react-native-svg；Expo 项目可用 npx expo install react-native-svg。
 2. 将 JSON 作为 designSpec 传入。使用从 App Store、Google Play 或订阅 SDK 取得的 products 数组。每项提供 productId 和 localizedPrice。
 3. 按企业商品 ID 对应 design-spec.json 中的 plans[].productId。未映射、商店无该商品或无本地化价格时，购买 CTA 会停用。
 4. 用 onPurchase(product, planId) 调用宿主的购买流程，用 onRestore 调用恢复购买，用 onClose 关闭页面。可通过 onError 呈现 SDK 错误。

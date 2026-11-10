@@ -1,3 +1,5 @@
+export type AiAvailability = "available" | "requires-code" | "unavailable";
+
 export type GenerationErrorCode =
   | "CONFIG_MISSING"
   | "ACCESS_DENIED"

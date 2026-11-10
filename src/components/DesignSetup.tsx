@@ -4,22 +4,27 @@ import Icon from "./Icon";
 import { Logo } from "./Navigation";
 import { useState } from "react";
 import { LANGUAGE_LABELS, MARKET_CONFIG, MARKETS, LANGUAGES } from "@/lib/designSchema";
-import type { InputPayload, TargetMarket, OutputLanguage } from "@/lib/designSchema";
+import type { InputPayload, TargetMarket, OutputLanguage, PageSection } from "@/lib/designSchema";
 import { validateInput } from "@/lib/inputValidation";
 import type { InputErrors } from "@/lib/inputValidation";
+import { paywallCopyIssues } from "@/lib/paywallContent";
 import { isProductField, prepareInput } from "@/lib/workspaceData";
 import { chooseTargetMarket, generationInput, mergeImport, projectDraft, updateDraft } from "@/lib/productDraft";
 import type { ProductDraft } from "@/lib/productDraft";
 import { productFingerprint, resultIsStale } from "@/lib/studioTypes";
 import type { ConfirmationStatus, GenerationStatus } from "@/lib/studioTypes";
+import type { AiAvailability } from "@/lib/generationTypes";
+import type { ImageInspection } from "@/lib/imageInspection";
 import { useStudioSource } from "./StudioProvider";
 import ProductSummary from "./ProductSummary";
 import ProductEditor from "./ProductEditor";
 import ProductDataTools from "./ProductDataTools";
 import AdvancedSettings from "./AdvancedSettings";
+import BackgroundPicker from "./BackgroundPicker";
 import BeforeAfter from "./BeforeAfter";
 import DesignReview from "./DesignReview";
-import { describeDesignChanges } from "@/lib/designSummary";
+import ResultChanges from "./ResultChanges";
+import CopyEditor from "./CopyEditor";
 import ExportDesign from "./ExportDesign";
 import SourcePicker from "./SourcePicker";
 import Modal from "./Modal";
@@ -43,7 +48,8 @@ const STYLES = [
     value: "溫暖親切：語調友善，採用柔和的視覺元素。",
   },
 ];
-export default function DesignSetup() {
+const AREA_LABELS = { top: "原圖上方", middle: "原圖中段", bottom: "原圖下方", unknown: "位置待核對" };
+export default function DesignSetup({ aiStatus = "available" }: { aiStatus?: AiAvailability }) {
   const store = useStudioSource();
   const { source, product, target, design, confirmed, setConfirmed, result, setResult } = store;
   const form = projectDraft(product, target, design);
@@ -58,15 +64,25 @@ export default function DesignSetup() {
   const [generation, setGeneration] = useState<GenerationStatus>(result ? "success" : "idle");
   const [generationError, setGenerationError] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [generationMode, setGenerationMode] = useState<"live" | "demo">(result?.mode ?? "live");
+  const generationMode = aiStatus === "unavailable" ? "demo" : store.mode ?? result?.mode ??
+    (aiStatus === "requires-code" ? "demo" : "live");
   const [accessToken, setAccessToken] = useState("");
-  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessDraft, setAccessDraft] = useState("");
+  const [accessError, setAccessError] = useState("");
+  const [accessOpen, setAccessOpen] = useState<"generate" | "inspect" | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const [inspection, setInspection] = useState<{ sourceId: string; data?: ImageInspection; error?: string }>();
+  const [locate, setLocate] = useState<{ section: PageSection }>();
+  const [copyOpen, setCopyOpen] = useState(false);
   const busy = store.generationLock;
   const loading = store.generating || generation === "loading";
-  const [colorText, setColorText] = useState({
+  const currentInspection = inspection?.sourceId === source?.id ? inspection : undefined;
+  const [colorEdit, setColorEdit] = useState<{ colors: typeof design.brandColors; key: "allowed" | "forbidden"; text: string }>();
+  const colorText = {
     allowed: design.brandColors.allowed.join(", "),
     forbidden: design.brandColors.forbidden.join(", "),
-  });
+    ...(colorEdit?.colors === design.brandColors ? { [colorEdit.key]: colorEdit.text } : {}),
+  };
 
   const metadata = source ? {
     kind: source.kind,
@@ -115,7 +131,7 @@ export default function DesignSetup() {
       return;
     }
     setEditorOpen(false);
-    setNotice("資料已儲存，請確認產品資料後生成。");
+    setNotice("草稿已更新，請確認訂閱資料後生成。");
   }
   function targetIssues(): InputErrors {
     return {
@@ -133,6 +149,8 @@ export default function DesignSetup() {
       if (target.market && Object.keys(productIssues()).length) {
         setEditorErrors(productIssues());
         setEditorOpen(true);
+      } else if (Object.keys(issues).length) {
+        focusIssue(Object.keys(issues)[0]);
       }
       return;
     }
@@ -140,26 +158,64 @@ export default function DesignSetup() {
     setConfirmation("confirmed");
     setNotice("產品資料已確認。");
   }
+  function focusIssue(field: string) {
+    if (isProductField(field)) {
+      setEditorErrors({ ...productIssues(), ...copyIssues });
+      setEditorOpen(true);
+    }
+    requestAnimationFrame(() => {
+      const element = document.getElementById(field === "form" ? "studio-source" : field);
+      if (element?.closest("details")) element.closest("details")!.open = true;
+      const control = element?.matches("input, select, textarea, button") ? element
+        : element?.querySelector<HTMLElement>("button:not(:disabled)") ?? element;
+      control?.focus({ preventScroll: true });
+      control?.scrollIntoView?.({ block: "center" });
+    });
+  }
+  const copyIssues = effectiveInput ? paywallCopyIssues(effectiveInput, generationMode) : {};
+  const blockers: InputErrors = {
+    ...(!source ? { form: "請先提供原始頁面或使用示例。" } : {}),
+    ...targetIssues(),
+    ...(target.market ? productIssues() : {}),
+    ...(!isConfirmed ? { confirmation: "請先確認訂閱資料。" } : {}),
+    ...(effectiveInput ? validateInput(effectiveInput) : {}),
+    ...copyIssues,
+  };
+  const firstBlocker = Object.entries(blockers)[0];
+  const currentStep = !source || !target.market || !target.language ? 0 : !isConfirmed ? 1 : 2;
   function prepareGenerationInput(): InputPayload | null {
-    const issues = effectiveInput ? validateInput(effectiveInput) : targetIssues();
-    if (!source) issues.form = "請先提供原始頁面或使用示例。";
-    if (!isConfirmed) issues.confirmation = "請先確認產品資料。";
-    setErrors(issues);
-    return source && effectiveInput && !Object.keys(issues).length ? structuredClone(effectiveInput) : null;
+    setErrors(blockers);
+    return source && effectiveInput && !firstBlocker ? structuredClone(effectiveInput) : null;
+  }
+  function jumpTo(id: string) {
+    const section = document.getElementById(id);
+    section?.focus({ preventScroll: true });
+    section?.scrollIntoView?.({ block: "start" });
+  }
+  function showResult() {
+    jumpTo("workspace-title");
+  }
+  function requestAccess(action: "generate" | "inspect", rejected = false) {
+    if (rejected) setAccessToken("");
+    setAccessDraft("");
+    setAccessError(rejected ? "存取驗證失敗，請核對工作區存取碼。" : "");
+    setAccessOpen(action);
   }
   async function handleGenerate(token = accessToken) {
-    if (busy.current) return;
-    busy.current = true;
-    setGeneration("validating");
+    if (busy.current || inspecting) return;
     setGenerationError("");
     const payload = prepareGenerationInput();
     if (!payload) {
-      setGeneration("error");
-      setGenerationError("請完成來源及產品資料確認後重試。");
-      busy.current = false;
+      if (firstBlocker) focusIssue(firstBlocker[0]);
       return;
     }
+    if (generationMode === "live" && aiStatus === "requires-code" && !token.trim()) {
+      requestAccess("generate");
+      return;
+    }
+    busy.current = true;
     setReviewOpen(false);
+    setLocate(undefined);
     setGeneration("loading");
     store.setGenerating(true);
     try {
@@ -169,27 +225,26 @@ export default function DesignSetup() {
           await generateRealDesign(payload, source!, confirmed, token),
         );
         setGeneration("success");
-        return;
+      } else {
+        const started = performance.now();
+        const engine = await import("@/lib/demoEngine");
+        const spec = engine.simulateDesign(payload);
+        setResult({
+          inputSnapshot: payload,
+          sourceId: source!.id,
+          spec,
+          audit: engine.auditDesign(payload, spec),
+          mode: "demo",
+          generationDurationMs: Math.round(performance.now() - started),
+        });
+        setGeneration("success");
       }
-      const started = performance.now();
-      const engine = await import("@/lib/demoEngine");
-      const spec = engine.validateDesignSpec(
-        engine.simulateDesign(payload),
-        payload,
-      );
-      const audit = engine.auditDesign(payload, spec);
-      setResult({
-        inputSnapshot: payload,
-        sourceId: source!.id,
-        spec,
-        audit,
-        mode: "demo",
-        generationDurationMs: Math.round(performance.now() - started),
-      });
-      setGeneration("success");
+      if (window.matchMedia?.("(max-width: 800px)").matches) {
+        requestAnimationFrame(showResult);
+      }
     } catch (e) {
       setGeneration("error");
-      if (e instanceof Error && "code" in e && e.code === "ACCESS_DENIED") setAccessOpen(true);
+      if (e instanceof Error && "code" in e && e.code === "ACCESS_DENIED") requestAccess("generate", true);
       const safe =
         e instanceof Error &&
         (generationMode === "demo" || e.name === "ClientGenerationError");
@@ -205,8 +260,28 @@ export default function DesignSetup() {
       store.setGenerating(false);
     }
   }
+  async function handleInspect(token = accessToken) {
+    if (source?.kind !== "image" || aiStatus === "unavailable" || busy.current || inspecting) return;
+    if (aiStatus === "requires-code" && !token.trim()) {
+      requestAccess("inspect");
+      return;
+    }
+    setInspecting(true);
+    setInspection(undefined);
+    try {
+      const { inspectSource } = await import("@/lib/generationClient");
+      setInspection({ sourceId: source.id, data: await inspectSource(source, token) });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ACCESS_DENIED") requestAccess("inspect", true);
+      setInspection({ sourceId: source.id, error: error instanceof Error && error.name === "ClientGenerationError"
+        && !("code" in error && error.code === "DESIGN_INVALID")
+        ? error.message : "未能辨識原圖，請重試或手動填寫。" });
+    } finally {
+      setInspecting(false);
+    }
+  }
   const reviewedJson = jsonOpen ? JSON.stringify({ source: metadata, target, product, input: effectiveInput, confirmed: isConfirmed }, null, 2) : "";
-  const goalError = target.market ? validateInput(input).designGoal : undefined;
+  const goalError = target.market ? blockers.designGoal : undefined;
   const goalErrors = goalError ? { ...errors, designGoal: goalError } : errors;
   const style =
     STYLES.find((s) => s.value === input.brandStyle)?.value ?? "custom";
@@ -228,6 +303,31 @@ export default function DesignSetup() {
     checking: "正在檢查資料……",
     error: "部分訂閱資料需要修正",
   }[confirmationState];
+  function switchMode(mode: "live" | "demo") {
+    store.setMode(mode);
+    setGenerationError("");
+    setGeneration(result ? "success" : "idle");
+    setAccessOpen(null);
+  }
+  function editIssue(section: "product" | "brand") {
+    if (section === "product") setEditorOpen(true);
+    else focusIssue("brandColors.allowed");
+  }
+  function closeCopy() {
+    setCopyOpen(false);
+    requestAnimationFrame(() => document.getElementById("edit-result-copy")?.focus());
+  }
+  const candidateList = currentInspection?.data && (
+    <>
+      <p className="helper">請對照原圖，並使用已核實的目標市場資料填寫價格與試用條款。</p>
+      {currentInspection.data.status === "limited" && <p className="helper">部分文字未能清楚辨識。</p>}
+      {currentInspection.data.candidates.length ? (
+        <ul>{currentInspection.data.candidates.map(({ label, text, area }, index) => (
+          <li key={index}><strong>{label}</strong> <small>{AREA_LABELS[area]}</small><p>{text}</p></li>
+        ))}</ul>
+      ) : <p className="helper">沒有可供核對的文字，請手動填寫資料。</p>}
+    </>
+  );
   return (
     <main className={loading ? "studio-page initial-studio is-generating" : "studio-page initial-studio"} aria-busy={loading}>
       <header className="studio-nav">
@@ -236,12 +336,61 @@ export default function DesignSetup() {
         <span className="studio-title">設計工作台</span>
         <Link className="back-home" href="/">返回首頁</Link>
       </header>
+      <nav className="studio-steps-nav" aria-label="工作台步驟">
+        <ol className="studio-steps">
+          {[
+            { title: "設定市場", id: "targetMarket" },
+            { title: "核對訂閱資料", id: "studio-product-title" },
+            { title: "生成與檢查", id: result ? "workspace-title" : "generationMode" },
+          ].map(({ title, id }, index) => (
+            <li key={title}>
+              <a href={"#" + id} aria-current={index === currentStep ? "step" : undefined}
+                onClick={(event) => { event.preventDefault(); jumpTo(id); }}>
+                <span aria-hidden="true">{index < currentStep ? "✓" : index + 1}</span>{title}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
       <div className="studio-shell">
       <aside className="setup-panel" aria-labelledby="setup-title">
+        <div className="setup-scroll">
         <div className="setup-heading"><h1 id="setup-title">設計設定</h1></div>
-        <section className="studio-section" aria-label="原始訂閱頁面">
+        {store.restoredAt && <div className="restored-draft">
+          <p className="helper">已恢復草稿 · {new Date(store.restoredAt).toLocaleString("zh-HK")}</p>
+          {result && <button className="text-button" type="button" onClick={showResult}>查看已恢復的結果 →</button>}
+        </div>}
+        {store.draftError && <p className="helper" role="status">此瀏覽器未能保存草稿。</p>}
+        {(source || target.market || result || store.restoredAt) && <details className="draft-controls">
+          <summary>此瀏覽器的草稿</summary>
+          <p className="helper">會保存設定、訂閱資料及最近結果。重新整理後，請重新選擇上傳的圖片。</p>
+          <button className="text-button" type="button" disabled={loading || inspecting} onClick={() => {
+            store.forgetDraft();
+            setAccessToken("");
+            markDirty();
+            setReviewOpen(false);
+            setGeneration("idle");
+            setGenerationError("");
+          }}>清除草稿與結果</button>
+        </details>}
+        <section className="studio-section" id="studio-source" tabIndex={-1} aria-label="原始訂閱頁面">
           <h2>原始訂閱頁面 *</h2>
           <SourcePicker compact />
+          {source?.kind === "image" && aiStatus !== "unavailable" && (
+            <div className="source-inspection">
+              <p className="helper">辨識會將原圖傳送至 DeepSeek，擷取可見文字供核對。</p>
+              <button className="secondary" type="button" disabled={loading || inspecting} onClick={() => void handleInspect()}>
+                {inspecting ? "正在辨識原圖…" : currentInspection?.data ? "重新辨識原圖" : "辨識原圖資料"}
+              </button>
+              {currentInspection?.error && <p role="alert" className="error">{currentInspection.error}</p>}
+              {candidateList && <section aria-label="待核對資料" aria-live="polite">
+                <h3>待核對資料</h3>
+                {candidateList}
+                <button className="text-button" type="button" onClick={() => target.market
+                  ? setEditorOpen(true) : focusIssue("targetMarket")}>核對並填寫訂閱資料 →</button>
+              </section>}
+            </div>
+          )}
         </section>
         <section className="studio-section input-stack" aria-label="目標市場與語言">
           <h2>目標市場與語言</h2>
@@ -263,12 +412,14 @@ export default function DesignSetup() {
         </section>
         <section className="product-data-module" aria-label="產品與訂閱資料">
           <div className="product-data-header">
-            <h2>產品與訂閱資料</h2>
+            <h2 id="studio-product-title" tabIndex={-1}>產品與訂閱資料</h2>
             <span className={"data-status state-" + confirmationState}>{isConfirmed ? "資料已確認" : confirmationState === "error" ? "需要修正" : confirmationState === "updated" ? "需要重新確認" : confirmationState === "checking" ? "檢查中" : "待確認"}</span>
           </div>
           <ProductSummary input={input} market={target.market} onEdit={() => setEditorOpen(true)} />
-          {target.market && !input.subscriptionPlans.some((plan) => Number.isSafeInteger(plan.price.amountMinor)) && (
-            <p className="helper">請填寫{MARKET_CONFIG[target.market].label}市場的訂閱價格。</p>
+          {target.market && input.subscriptionPlans.some((plan) => !Number.isSafeInteger(plan.price.amountMinor)) && (
+            <button className="text-button missing-price" type="button" onClick={() => focusIssue(
+              "subscriptionPlans." + input.subscriptionPlans.findIndex((plan) => !Number.isSafeInteger(plan.price.amountMinor)) + ".price.amountMinor",
+            )}>填寫{MARKET_CONFIG[target.market].label}市場的訂閱價格 →</button>
           )}
           {product.importedMetadata?.language && <p className="helper">匯入檔標示語言 · {LANGUAGE_LABELS[product.importedMetadata.language]}</p>}
           <ProductDataTools product={product} market={target.market} onImport={replaceProduct} onReview={() => { setJsonMessage(""); setJsonOpen(true); }} />
@@ -277,8 +428,8 @@ export default function DesignSetup() {
               <span><Icon name={isConfirmed ? "check" : confirmation === "error" ? "close" : "info"} size={18} /></span>
               <div><b role="status">{confirmationText}</b><p>請核對套餐價格、試用條款及會員權益。</p></div>
             </div>
-            <button className={isConfirmed ? "confirmation-secondary" : "confirmation-primary"} type="button" onClick={isConfirmed ? () => setEditorOpen(true) : confirmProduct}>
-              {isConfirmed ? "重新檢視資料" : "確認產品資料"}
+            <button id="confirmation" className={isConfirmed ? "confirmation-secondary" : "confirmation-primary"} type="button" onClick={isConfirmed ? () => setEditorOpen(true) : confirmProduct}>
+              {isConfirmed ? "重新檢視資料" : "確認訂閱資料"}
             </button>
           </div>
         </section>
@@ -301,6 +452,10 @@ export default function DesignSetup() {
               <option value="benefits">突出會員權益</option>
             </select>
           </Field>
+          <fieldset className="ai-fields">
+          <legend>AI 設計偏好</legend>
+          {generationMode === "demo" && <p className="helper">規則預覽會套用背景圖片。風格及補充要求只用於 AI 本地化。</p>}
+          <fieldset className="ai-text-controls" disabled={generationMode === "demo"}>
           <div className="input-block" role="group" aria-labelledby="visualStyle">
             <label id="visualStyle">視覺風格</label>
             <div className="style-options">
@@ -325,68 +480,69 @@ export default function DesignSetup() {
               placeholder="描述你希望如何調整訂閱頁面……"
             />
           </Field>
+          </fieldset>
+          <BackgroundPicker tint={result?.spec.theme.background ?? "#ffffff"} />
+          </fieldset>
         <AdvancedSettings
           input={input}
           errors={errors}
           colorText={colorText}
+          aiEnabled={generationMode === "live"}
           onColorChange={(key, text) => {
-            setColorText({ ...colorText, [key]: text });
+            const colors = { ...design.brandColors, [key]: text.trim() ? text.split(",").map((c) => c.trim()) : [] };
+            setColorEdit({ colors, key, text });
             change({
               ...input,
-              brandColors: {
-                ...input.brandColors,
-                [key]: text.trim() ? text.split(",").map((c) => c.trim()) : [],
-              },
+              brandColors: colors,
             });
           }}
           onChange={change}
         />
         </section>
+        {Object.keys(errors).length > 0 && (
+          <div className="setup-errors" role="alert">
+            {Object.entries(errors).map(([key, message]) => (
+              <button className="text-button" type="button" key={key} onClick={() => focusIssue(key)}>{message}</button>
+            ))}
+          </div>
+        )}
+        <p className="workspace-notice" role="status">{notice}</p>
+        </div>
         <div className="generate-wrap">
           <Field label="生成模式" path="generationMode">
             <select
               id="generationMode"
               value={generationMode}
               disabled={loading}
-              onChange={(e) => {
-                setGenerationMode(e.target.value as "live" | "demo");
-                setGenerationError("");
-              }}
+              onChange={(e) => switchMode(e.target.value as "live" | "demo")}
             >
-              <option value="live">DeepSeek 生成</option>
-              <option value="demo">本機生成</option>
+              <option value="demo">規則預覽</option>
+              <option value="live" disabled={aiStatus === "unavailable"}>AI 本地化（DeepSeek）</option>
             </select>
           </Field>
+          <p className="mode-explanation">
+            {generationMode === "demo"
+              ? "依已確認資料套用模板。補充要求與風格描述會保留，切換至 AI 本地化後才會應用。"
+              : "生成時會將原圖、已確認資料及設計要求傳送至 DeepSeek。"}
+          </p>
+          {aiStatus === "unavailable" && <p>AI 本地化目前未開放。你可以使用規則預覽。</p>}
+          {aiStatus === "requires-code" && <p>AI 本地化需要工作區存取碼。</p>}
+          {!loading && firstBlocker && <button className="text-button blocker-link" type="button" onClick={() => focusIssue(firstBlocker[0])}>{firstBlocker[1]} →</button>}
           <button
             type="button"
             className="generate-button"
             onClick={() => void handleGenerate()}
-            disabled={loading || generation === "validating"}
+            disabled={loading || inspecting || !store.draftReady}
           >
             {loading ? <span className="spinner" /> : <Icon name="sparkles" size={19} />}
             {loading ? "正在生成設計…" : "生成本地化設計"}
             <Icon name="arrow" size={18} />
           </button>
-          <p>
-            {generationMode === "live"
-              ? "原始頁面及已確認資料將傳送至 DeepSeek 作設計參考。"
-              : "使用本機規則按已確認資料生成。"}
-          </p>
         </div>
-        {Object.keys(errors).length > 0 && (
-          <div className="setup-errors" role="alert">
-            {Object.entries(errors).map(([key, message]) => (
-              <p key={key}>{message}</p>
-            ))}
-          </div>
-        )}
-        <p className="workspace-notice" role="status">
-          {notice}
-        </p>
       </aside>
       <section className="workspace" aria-labelledby="workspace-title">
         <div className="workspace-header">
-          <h2 id="workspace-title">{reviewOpen ? "設計檢查" : result ? "訂閱頁面對比" : "訂閱頁面預覽"}</h2>
+          <h2 id="workspace-title" tabIndex={-1}>{reviewOpen ? "設計檢查" : result ? "訂閱頁面對比" : "訂閱頁面預覽"}</h2>
           {reviewOpen ? (
             <button className="return-comparison" onClick={() => setReviewOpen(false)}>
               <Icon name="arrow" size={17} />返回頁面對比
@@ -402,42 +558,49 @@ export default function DesignSetup() {
             {stale && (
               <div className="result-stale-alert stale-banner" role="status">
                 <Icon name="info" size={18} />
-                <div><b>設計要求已更新，請重新生成</b><p>目前顯示的是上一次生成結果，請重新生成以套用新設定。</p></div>
+                <div><b>{source ? "設計要求已更新，請重新生成" : "請重新選擇原圖"}</b><p>目前顯示的是上一次生成結果。{source ? "請重新生成以套用新設定。" : "加入原圖後可重新生成。"}</p></div>
               </div>
             )}
             {generationError && (
               <div className="generation-error-banner error-banner" role="alert">
                 <span><Icon name="close" size={19} /></span>
                 <div><b>未能完成本地化設計</b><p>{generationError}</p></div>
-                <button onClick={() => void handleGenerate()} disabled={loading}>重試生成</button>
+                <div className="error-actions">
+                  <button onClick={() => void handleGenerate()} disabled={loading}>重試生成</button>
+                  {generationMode === "live" && <button onClick={() => switchMode("demo")} disabled={loading}>改用規則預覽</button>}
+                </div>
               </div>
             )}
-            <BeforeAfter source={source} generated={result} loading={loading} />
+            {result && store.backgroundNeedsUpload && <p className="helper" role="status">此草稿的背景圖片需要重新上傳，目前顯示原有背景。</p>}
+            <BeforeAfter source={source} generated={result} loading={loading} locate={locate} background={store.background.asset} />
             {result?.mode === "live" && result.meta?.visualAnalysis.status === "limited" && (
               <p className="helper" role="status">原圖部分內容未能清楚辨識，請核對預覽及設計檢查。</p>
             )}
             {result && !loading && (
-              <section className="result-summary">
-                <div className="result-section-heading">
-                  <div><h3>本次設計改動</h3>{result.mode === "live" && <span>DeepSeek</span>}</div>
-                </div>
-                <div className="result-summary-grid">
-                  {describeDesignChanges(result).map(({ title, description }) => (
-                    <article key={title}>
-                      <span><Icon name="sparkles" /></span>
-                      <div><b>{title}</b><p>{description}</p></div>
-                    </article>
-                  ))}
-                </div>
-              </section>
+              <ResultChanges result={result} uploadedBackground={Boolean(store.background.asset)} onLocate={(section) => setLocate({ section })}
+                onEditCopy={!stale ? () => setCopyOpen(true) : undefined} />
             )}
           </>}
-          <DesignReview result={result} stale={stale} open={reviewOpen} onOpen={() => setReviewOpen(true)} />
-          {result && !loading && <ExportDesign result={result} stale={stale} />}
+          <DesignReview result={result} stale={stale} open={reviewOpen} onOpen={() => setReviewOpen(true)}
+            background={store.background.asset} onEditIssue={editIssue} onCompare={() => setReviewOpen(false)} />
+          {result && !loading && <ExportDesign result={result} stale={stale} background={store.background.asset}
+            backgroundBusy={store.background.busy} backgroundNeedsUpload={store.backgroundNeedsUpload} />}
         </div>
       </section>
       </div>
-      <ProductEditor open={editorOpen} draft={form} market={target.market} errors={editorErrors} onChange={(next) => {
+      {copyOpen && result && !stale && <CopyEditor result={result} onClose={closeCopy} onSave={(next) => {
+        setResult(next);
+        closeCopy();
+      }} />}
+      <ProductEditor open={editorOpen} draft={form} market={target.market} errors={editorErrors}
+        reference={editorOpen && candidateList && source?.kind === "image" ? (
+          <details className="source-inspection inspection-reference" open>
+            <summary>待核對的原圖資料</summary>
+            <a className="text-button" href={source.url} target="_blank" rel="noreferrer">查看原圖 ↗</a>
+            {candidateList}
+          </details>
+        ) : undefined}
+        onChange={(next) => {
         markDirty();
         store.setProduct((current) => updateDraft(current, target.market, next));
       }} onClose={() => setEditorOpen(false)} onSave={saveProduct} />
@@ -456,16 +619,26 @@ export default function DesignSetup() {
           {reviewedJson}
         </pre>
       </Modal>
-      <Modal open={accessOpen} onClose={() => setAccessOpen(false)} title="存取驗證">
+      <Modal open={Boolean(accessOpen)} onClose={() => setAccessOpen(null)} title="AI 本地化需要工作區存取碼">
         <form onSubmit={(event) => {
           event.preventDefault();
-          setAccessOpen(false);
-          void handleGenerate(accessToken);
+          const action = accessOpen;
+          const token = accessDraft.trim();
+          if (!token) {
+            setAccessError("請輸入工作區存取碼。");
+            return;
+          }
+          setAccessToken(token);
+          setAccessOpen(null);
+          if (action === "inspect") void handleInspect(token);
+          else void handleGenerate(token);
         }}>
           <Field label="工作區存取碼" path="generationAccessToken">
-            <input id="generationAccessToken" type="password" autoComplete="off" required value={accessToken} onChange={(event) => setAccessToken(event.target.value)} />
+            <input id="generationAccessToken" type="password" autoComplete="off" required value={accessDraft} onChange={(event) => setAccessDraft(event.target.value)} />
           </Field>
-          <button className="primary" type="submit">驗證並重試</button>
+          {accessError && <p role="alert" className="error">{accessError}</p>}
+          <button className="primary" type="submit">{accessOpen === "inspect" ? "驗證並辨識" : "驗證並生成"}</button>
+          <button className="text-button" type="button" onClick={() => switchMode("demo")}>改用規則預覽</button>
         </form>
       </Modal>
     </main>

@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import type { StudioResult } from "@/lib/studioTypes";
+import type { StudioBackground } from "@/lib/background";
 import { deliveryBlock, deliveryFiles, deliveryZip } from "@/lib/delivery";
 import Modal from "./Modal";
 import PaywallPreview from "./PaywallPreview";
@@ -15,32 +16,46 @@ const formats = [
 ] as const;
 type Format = typeof formats[number][0];
 
-export default function ExportDesign({ result, stale }: { result: StudioResult; stale: boolean }) {
+export default function ExportDesign({ result, stale, background, backgroundBusy, backgroundNeedsUpload }: {
+  result: StudioResult;
+  stale: boolean;
+  background?: StudioBackground | null;
+  backgroundBusy?: boolean;
+  backgroundNeedsUpload?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<Format>("zip");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [exported, setExported] = useState<{ result: StudioResult; backgroundKey: string }>();
   const stage = useRef<HTMLDivElement>(null);
-  const blocked = deliveryBlock(result, stale);
-  const needsReview = result.audit.checks.some((check) => check.status === "needs-review");
+  const blocked = backgroundNeedsUpload ? "請重新上傳草稿的背景圖片，或選擇使用原有背景後再匯出。"
+    : backgroundBusy ? "正在處理背景圖片，完成後即可匯出。" : deliveryBlock(result, stale);
+  const needsReview = Boolean(background) || result.audit.checks.some((check) => check.status === "needs-review");
+  const linkedAssetFormat = background && (format === "design-spec.json" || format === "react-native/LocalizedPaywall.tsx");
+  const backgroundKey = background ? JSON.stringify(background.config) : "";
+  const updated = exported && (exported.result !== result || exported.backgroundKey !== backgroundKey);
 
   async function download() {
-    if (busy || blocked) return;
+    if (busy || blocked || linkedAssetFormat) return;
     setBusy(true);
     setMessage("");
     try {
-      const files = deliveryFiles(result);
+      const files = deliveryFiles(result, background);
       const selected = formats.find(([value]) => value === format)!;
       let blob: Blob;
       if (format === "zip" || format === "preview.png") {
-        const paywall = stage.current?.querySelector<HTMLElement>(".paywall-content");
+        const paywall = stage.current?.querySelector<HTMLElement>(".paywall-viewport");
         if (!paywall) throw new Error("未能取得預覽，請重新開啟匯出。");
         await document.fonts.ready;
+        const image = paywall.querySelector<HTMLImageElement>(".paywall-background img");
+        if (image) await image.decode();
         const { toBlob } = await import("html-to-image");
         const png = await toBlob(paywall, { pixelRatio: 2, skipFonts: true });
         if (!png?.size) throw new Error("未能產生 PNG，請重試。");
         blob = format === "zip"
-          ? new Blob([new Uint8Array(deliveryZip(files, new Uint8Array(await png.arrayBuffer())))], { type: selected[3] })
+          ? new Blob([new Uint8Array(deliveryZip(files, new Uint8Array(await png.arrayBuffer()),
+            background ? new Uint8Array(await background.image.arrayBuffer()) : undefined))], { type: selected[3] })
           : png;
       } else {
         blob = new Blob([files[format]], { type: selected[3] });
@@ -53,6 +68,7 @@ export default function ExportDesign({ result, stale }: { result: StudioResult; 
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+      if (format === "zip" || format === "preview.png") setExported({ result, backgroundKey });
       setMessage("已開始下載 " + selected[2]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "匯出失敗，請重試。");
@@ -65,24 +81,27 @@ export default function ExportDesign({ result, stale }: { result: StudioResult; 
     <section className="localization-review-card delivery-card">
       <div className="review-card-copy">
         <h3>匯出設計</h3>
-        <p>{blocked ?? (needsReview ? "此成果包含需要人工確認的項目，狀態會保留在報告中。" : "下載預覽、設計規格及開發接入檔案。")}</p>
+        <p>{blocked ?? (updated ? "設計或背景已更新，請重新下載交付檔案。" :
+          needsReview ? "此成果包含需要人工確認的項目，狀態會保留在報告中。" : "下載預覽、設計規格及開發接入檔案。")}</p>
       </div>
-      <button type="button" disabled={Boolean(blocked)} onClick={() => { setOpen(true); setMessage(""); }}>匯出設計 →</button>
+      <button type="button" disabled={Boolean(blocked)} onClick={() => { if (linkedAssetFormat) setFormat("zip"); setOpen(true); setMessage(""); }}>匯出設計 →</button>
       <Modal open={open} onClose={() => { if (!busy) setOpen(false); }} title="匯出設計">
-        {result.mode === "demo" && <p className="helper">本次設計由本機規則生成。</p>}
+        {result.mode === "demo" && <p className="helper">本次設計源自規則預覽。</p>}
         {needsReview && <p className="helper">匯出包保留人工確認項目。請在開發交付前核對報告。</p>}
+        {background && <p className="helper">請下載完整 ZIP，讓設計規格、React Native 元件及背景圖片一併交付。</p>}
         <label className="field">
           <span>檔案格式</span>
           <div className="select-wrap"><select value={format} disabled={busy} onChange={(event) => setFormat(event.target.value as Format)}>
-            {formats.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {formats.map(([value, label]) => <option key={value} value={value}
+              disabled={Boolean(background) && (value === "design-spec.json" || value === "react-native/LocalizedPaywall.tsx")}>{label}</option>)}
           </select></div>
         </label>
-        <button className="primary" type="button" disabled={busy || Boolean(blocked)} onClick={() => void download()}>
+        <button className="primary" type="button" disabled={busy || Boolean(blocked) || Boolean(linkedAssetFormat)} onClick={() => void download()}>
           {busy ? "正在建立檔案…" : "下載"}
         </button>
         {message && <p role="status">{message}</p>}
         {open && <div className="export-preview" aria-hidden="true" inert ref={stage}>
-          <PaywallPreview input={result.inputSnapshot} spec={result.spec} />
+          <PaywallPreview input={result.inputSnapshot} spec={result.spec} background={background} />
         </div>}
       </Modal>
     </section>

@@ -4,8 +4,11 @@ import { BILLING_PERIODS, LANGUAGES, MARKETS, MAX_PLANS } from "./designSchema.t
 import { DesignSpecSchema } from "./generationSchema.ts";
 import { auditDesign } from "./demoEngine.ts";
 import { paywallLabels, planPrice, trialDetails } from "./paywallContent.ts";
+import { examplePaywallCopy } from "./exampleBenefitCopy.ts";
 import type { StudioResult } from "./studioTypes.ts";
 import { integrationGuide, nativeTemplate } from "./exportTemplate.ts";
+import { BACKGROUND_LIMIT, BACKGROUND_PATH, backgroundCheck, backgroundConfigSchema } from "./background.ts";
+import type { StudioBackground } from "./background.ts";
 
 const MoneySchema = z.object({
   currency: z.enum(["USD", "HKD"]), amountMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -22,6 +25,7 @@ export const DeliverySpecSchema = z.object({
   targetMarket: z.enum(MARKETS),
   outputLanguage: z.enum(LANGUAGES),
   design: DesignSpecSchema,
+  background: backgroundConfigSchema.optional(),
   plans: z.array(z.object({
     id: z.string(), name: z.string(), productId: z.string().optional(), price: MoneySchema,
     previewPrice: z.string(), periodLabel: z.string(), benefitIds: z.array(z.string()).optional(),
@@ -45,10 +49,10 @@ export function deliveryBlock(result: StudioResult, stale: boolean): string | nu
   return null;
 }
 
-export function createDeliverySpec(result: StudioResult): DeliverySpec {
+export function createDeliverySpec(result: StudioResult, background?: StudioBackground | null): DeliverySpec {
   const blocked = deliveryBlock(result, false);
   if (blocked) throw new Error(blocked);
-  const input = result.inputSnapshot;
+  const input = examplePaywallCopy(result.inputSnapshot);
   const source = input.originalPaywall!;
   const labels = paywallLabels[input.outputLanguage];
   const trials = trialDetails(input);
@@ -69,6 +73,7 @@ export function createDeliverySpec(result: StudioResult): DeliverySpec {
     targetMarket: input.targetMarket,
     outputLanguage: input.outputLanguage,
     design: result.spec,
+    ...(background ? { background: background.config } : {}),
     plans,
     terms: {
       trial: trials.map((trial) => trial.days + labels.trial + " · " + trial.planNames.join(" / ") + "\n" + trial.eligibility),
@@ -83,7 +88,7 @@ export function createDeliverySpec(result: StudioResult): DeliverySpec {
       storePriceRequired: true, mappingComplete: plans.every((plan) => Boolean(plan.productId)),
     },
     provenance: {
-      mode: result.mode, reviewRequired: result.audit.checks.some((check) => check.status === "needs-review"),
+      mode: result.mode, reviewRequired: Boolean(background) || result.audit.checks.some((check) => check.status === "needs-review"),
       simulatedFacts: input.dataMode === "simulation",
     },
   });
@@ -91,14 +96,15 @@ export function createDeliverySpec(result: StudioResult): DeliverySpec {
 
 const encode = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
 
-export function deliveryFiles(result: StudioResult) {
+export function deliveryFiles(result: StudioResult, background?: StudioBackground | null) {
+  const checks = background ? [...result.audit.checks.filter(({ id }) => id !== "decoration"), backgroundCheck(background)] : result.audit.checks;
   return {
-    "design-spec.json": encode(createDeliverySpec(result)),
+    "design-spec.json": encode(createDeliverySpec(result, background)),
     "audit-report.json": encode({
       schemaVersion: "1.0",
       mode: result.mode,
-      status: result.audit.checks.some((check) => check.status === "needs-review") ? "requires-human-review" : "automated-checks-passed",
-      checks: result.audit.checks,
+      status: checks.some((check) => check.status === "needs-review") ? "requires-human-review" : "automated-checks-passed",
+      checks,
       measured: {
         generationDurationMs: result.meta?.durationMs ?? result.generationDurationMs ?? null,
         tokenUsage: result.meta?.calls.map(({ inputTokens, outputTokens }) => ({ inputTokens, outputTokens })) ?? null,
@@ -107,14 +113,21 @@ export function deliveryFiles(result: StudioResult) {
         integrationDurationMs: null,
       },
     }),
-    "react-native/LocalizedPaywall.tsx": nativeTemplate,
-    "INTEGRATION.md": integrationGuide,
+    "react-native/LocalizedPaywall.tsx": nativeTemplate(result.spec.backgroundPattern, Boolean(background)),
+    "INTEGRATION.md": integrationGuide + (background
+      ? "\n## 上傳背景圖片\n\n請將 react-native/assets/background.png 放在 LocalizedPaywall.tsx 旁的 assets 資料夾。保留兩者的相對位置，應用程式便會載入交付包內的圖片。背景會按裝置畫面等比例裁切，焦點、縮放及遮罩取自 design-spec.json。\n"
+      : ""),
   };
 }
 
-export function deliveryZip(files: ReturnType<typeof deliveryFiles>, png: Uint8Array) {
+export function deliveryZip(files: ReturnType<typeof deliveryFiles>, png: Uint8Array, background?: Uint8Array) {
+  const spec = DeliverySpecSchema.parse(JSON.parse(files["design-spec.json"]));
+  if (Boolean(spec.background) !== Boolean(background) || (background && (!background.length || background.length > BACKGROUND_LIMIT))) {
+    throw new Error("交付包缺少有效的背景圖片，請重新匯出。");
+  }
   return zipSync({
     ...Object.fromEntries(Object.entries(files).map(([name, content]) => [name, strToU8(content)])),
     "preview.png": png,
+    ...(background ? { [BACKGROUND_PATH]: background } : {}),
   }, { level: 6 });
 }

@@ -5,6 +5,8 @@ import type {
   PageSection,
 } from "./designSchema.ts";
 import { validateInput } from "./inputValidation.ts";
+import { exampleBenefitCopy } from "./exampleBenefitCopy.ts";
+import { matchesOutputLanguage, paywallCopyIssues } from "./paywallContent.ts";
 const sections: PageSection[] = [
   "headline",
   "benefits",
@@ -50,7 +52,13 @@ export function validateDesignSpec(
   input: InputPayload,
 ): DesignSpec {
   const spec = object(value);
-  exactKeys(spec, spec.subtitle === undefined ? keys : [...keys, "subtitle"]);
+  exactKeys(spec, [
+    ...keys,
+    ...(spec.subtitle === undefined ? [] : ["subtitle"]),
+    ...(spec.backgroundPattern === undefined ? [] : ["backgroundPattern"]),
+  ]);
+  if (spec.backgroundPattern !== undefined && spec.backgroundPattern !== "christmas")
+    throw new Error("背景圖案無效。");
   if (spec.subtitle !== undefined && (typeof spec.subtitle !== "string" || !spec.subtitle.trim() || spec.subtitle.length > 700))
     throw new Error("副標題無效。");
   if (
@@ -197,13 +205,13 @@ export function simulateDesign(input: InputPayload, fail = false): DesignSpec {
         : `${input.productName}. Make room for what matters.`,
       benefitsCopy: input.benefits.map((b) => ({
         benefitId: b.id,
-        text: b.description,
+        text: exampleBenefitCopy(input.outputLanguage, b.id, b.description),
       })),
       ctaText: zh
         ? hans
-          ? "查看已确认的方案"
-          : "查看已確認的方案"
-        : "Explore your approved plans",
+          ? "选择订阅方案"
+          : "選擇訂閱方案"
+        : "Choose a subscription plan",
       designReasons: [
         {
           field: "layout",
@@ -220,7 +228,7 @@ export function simulateDesign(input: InputPayload, fail = false): DesignSpec {
         },
         {
           field: "copy",
-          reason: `標題及 CTA 使用預設 ${input.outputLanguage} 模板；權益保留已確認原文。補充要求與風格僅保存，未做語義理解或圖片分析。`,
+          reason: "標題及行動按鈕使用所選語言的模板。示例權益使用預先核對的譯文，其餘權益沿用已確認文案。",
         },
       ],
     },
@@ -275,6 +283,16 @@ export function auditDesign(
   }
   const inputIssues = validateInput(input);
   add("facts", "產品事實校驗", Object.keys(inputIssues).length ? "fail" : "pass", "input", Object.values(inputIssues).join("；") || "已確認的套餐、價格、權益引用及試用資料符合結構規則。");
+  const copyIssues = paywallCopyIssues(input, "live");
+  const languageMatches = !Object.keys(copyIssues).length &&
+    [spec.headline, spec.subtitle ?? "", spec.ctaText, ...spec.benefitsCopy.map(({ text }) => text)]
+      .every((text) => matchesOutputLanguage(text, input));
+  add("language", "輸出語言", languageMatches ? "pass" : "fail", "outputLanguage",
+    languageMatches ? "文案及訂閱條款通過基本語言檢查，品牌名與貨幣代碼保留。" :
+      Object.values(copyIssues).join(" ") || "標題、按鈕或權益含有與所選語言不符的內容。");
+  if (spec.backgroundPattern === "christmas") {
+    add("decoration", "聖誕背景圖案", "pass", "backgroundPattern", "頁首已繪製松枝、雪花及聖誕樹，訂閱卡片及條款區使用純色底。");
+  }
   add(
     "currency",
     "幣種與計費週期",
@@ -300,15 +318,15 @@ export function auditDesign(
     spec.benefitsCopy.length === input.benefits.length &&
     spec.benefitsCopy.every(
       (b) =>
-        input.benefits.find((v) => v.id === b.benefitId)?.description ===
-        b.text,
+        input.benefits.some((item) => item.id === b.benefitId &&
+          (item.description === b.text || exampleBenefitCopy(input.outputLanguage, item.id, item.description) === b.text)),
     );
   add(
     "benefits",
     "會員權益",
     exact ? "pass" : "needs-review",
     "benefitsCopy",
-    exact ? "保留全部已確認權益原文。" : "文案已改寫，需人工確認語義是否一致。",
+    exact ? "沿用已確認的權益文案或示例譯文。" : "文案已改寫，需人工確認語義是否一致。",
   );
   const palette = Object.values(spec.theme),
     allowed = input.brandColors.allowed.map((c) => c.toLowerCase()),

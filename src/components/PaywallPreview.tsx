@@ -1,18 +1,29 @@
 import type { CSSProperties } from "react";
-import type { DesignSpec, InputPayload } from "@/lib/designSchema";
+import type { DesignSpec, InputPayload, PageSection } from "@/lib/designSchema";
 import { paywallLabels, planPrice, trialDetails } from "@/lib/paywallContent";
+import { examplePaywallCopy } from "@/lib/exampleBenefitCopy";
+import { christmasPaths, christmasViewBox } from "@/lib/christmasBackground";
+import type { StudioBackground } from "@/lib/background";
+import { TEXT_SURFACE_THRESHOLD } from "@/lib/background";
+import PaywallBackground from "./PaywallBackground";
 import Icon from "./Icon";
 
-export default function PaywallPreview({ input, spec }: { input: InputPayload; spec: DesignSpec }) {
+export default function PaywallPreview({ input, spec, focusedSection, background }: {
+  input: InputPayload;
+  spec: DesignSpec;
+  focusedSection?: PageSection;
+  background?: StudioBackground | null;
+}) {
   const chinese = input.outputLanguage !== "en";
   const labels = paywallLabels[input.outputLanguage];
-  const trials = trialDetails(input);
-  const plansById = new Map(input.subscriptionPlans.map((plan) => [plan.id, plan]));
+  const display = examplePaywallCopy(input);
+  const trials = trialDetails(display);
+  const plansById = new Map(display.subscriptionPlans.map((plan) => [plan.id, plan]));
   const theme = {
-    background: spec.theme.background,
     color: spec.theme.text,
     "--paywall-cta-text": spec.theme.surface,
     "--paywall-accent": spec.theme.accent,
+    "--paywall-background": spec.theme.background,
     "--paywall-surface": spec.theme.surface,
   } as CSSProperties;
   const sections = {
@@ -55,15 +66,15 @@ export default function PaywallPreview({ input, spec }: { input: InputPayload; s
       </div>
     )),
     cta: (
-      <button className="paywall-cta" type="button" disabled title="預覽按鈕，無法付款">
+      <button className="paywall-cta" type="button" disabled title={labels.preview}>
         {spec.ctaText}<Icon name="arrow" size={13} />
       </button>
     ),
     disclosures: (
       <div className="paywall-facts">
         {trials.map((trial) => <p key={trial.planIds.join(",")}>{trial.planNames.join(" / ")} · {trial.renewalDisclosure}</p>)}
-        {!input.trialTerms.days && input.trialTerms.renewalDisclosure && <p>{input.trialTerms.renewalDisclosure}</p>}
-        {input.subscriptionPlans.map((plan) => plan.terms && <p key={plan.id}>{plan.name} · {plan.terms}</p>)}
+        {!display.trialTerms.days && display.trialTerms.renewalDisclosure && <p>{display.trialTerms.renewalDisclosure}</p>}
+        {display.subscriptionPlans.map((plan) => plan.terms && <p key={plan.id}>{plan.name} · {plan.terms}</p>)}
         <p className="paywall-preview-note">{labels.preview}</p>
       </div>
     ),
@@ -71,11 +82,24 @@ export default function PaywallPreview({ input, spec }: { input: InputPayload; s
   return (
     <div className="phone generated">
       <div className="phone-speaker" aria-hidden="true" />
-      <div className="paywall-content" tabIndex={0} lang={input.outputLanguage} aria-label="本地化訂閱頁面內容" style={theme}>
+      <div className="paywall-viewport" style={{ backgroundColor: spec.theme.background }}
+        data-text-surface={background && background.config.overlayOpacity < TEXT_SURFACE_THRESHOLD ? "true" : undefined}>
+      {background && <PaywallBackground asset={background} tint={spec.theme.background} />}
+      <div className="paywall-content" tabIndex={0} lang={input.outputLanguage} aria-label="本地化訂閱頁面內容" style={{ ...theme, background: "transparent" }}>
         <div className="phone-topline" aria-hidden="true"><span>9:42</span><span className="phone-status">● ◒</span></div>
         <span className="phone-close" aria-hidden="true">×</span>
+        {!background && spec.backgroundPattern === "christmas" && (
+          <svg className="paywall-christmas" data-background-pattern="christmas" viewBox={christmasViewBox}
+            aria-hidden="true" focusable="false" fill="none" stroke={spec.theme.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            {christmasPaths.map(({ d, opacity }) => <path key={d} d={d} strokeOpacity={opacity} />)}
+          </svg>
+        )}
         <div className="paywall-brand"><span><Icon name="sparkles" size={18} /></span><b>{input.productName}</b></div>
-        {spec.sectionOrder.map((section) => <div key={section}>{sections[section]}</div>)}
+        {spec.sectionOrder.map((section) => (
+          <div key={section} data-paywall-section={section} tabIndex={focusedSection === section ? -1 : undefined}
+            className={focusedSection === section ? "preview-section-focused" : undefined}>{sections[section]}</div>
+        ))}
+      </div>
       </div>
     </div>
   );

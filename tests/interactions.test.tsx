@@ -82,6 +82,7 @@ let root: ReturnType<typeof createRoot>;
 let mounted = false;
 afterEach(async () => {
   if (mounted) await unmount();
+  dom.window.localStorage.clear();
 });
 const container = document.getElementById("root")!;
 function text() {
@@ -163,6 +164,38 @@ const example = JSON.parse(
   ),
 );
 
+test("restricted workspace keeps rule preview usable and restores a validated copy revision", async () => {
+  await mount(<DesignSetup aiStatus="unavailable" />);
+  const mode = document.getElementById("generationMode") as HTMLSelectElement;
+  assert.equal(mode.value, "demo");
+  assert.equal(mode.querySelector<HTMLOptionElement>('option[value="live"]')?.disabled, true);
+  await click("使用示例訂閱頁面LearnLoop AI");
+  await fill("targetMarket", "HK");
+  await click("確認訂閱資料");
+  await click("生成本地化設計");
+  await settle();
+  const originalPreview = container.querySelector(".generated-side .paywall-content")!;
+  const originalOrder = Array.from(originalPreview.querySelectorAll("[data-paywall-section]"), (el) => el.getAttribute("data-paywall-section"));
+  const originalPlans = originalPreview.querySelector(".plans")!.textContent;
+  const originalStyle = originalPreview.getAttribute("style");
+  await click("只修改文案");
+  await fill("result-cta-copy", "只需 HKD 1");
+  await click("套用文案");
+  assert.match(text(), /請移除文案中的價格/);
+  await fill("result-cta-copy", "選擇你的學習方案");
+  await click("套用文案");
+  assert.match(text(), /選擇你的學習方案/);
+  await unmount();
+  await mount(<DesignSetup aiStatus="unavailable" />);
+  assert.match(text(), /已恢復草稿/);
+  const restored = container.querySelector(".generated-side .paywall-content")!;
+  assert.equal(restored.querySelector(".plans")!.textContent, originalPlans);
+  assert.equal(restored.getAttribute("style"), originalStyle);
+  assert.deepEqual(Array.from(restored.querySelectorAll("[data-paywall-section]"), (el) => el.getAttribute("data-paywall-section")), originalOrder);
+  assert.match(restored.textContent!, /選擇你的學習方案/);
+  assert.equal(button("匯出設計 →").disabled, false);
+});
+
 test("DOM A/E/F/G: demo, confirmation, independent language, localized comparison and stale", async () => {
   await mount(<DesignSetup />);
   await click("生成本地化設計");
@@ -172,7 +205,7 @@ test("DOM A/E/F/G: demo, confirmation, independent language, localized compariso
   assert.equal((document.getElementById("targetMarket") as HTMLSelectElement).value, "");
   await fill("targetMarket", "US");
   await fill("outputLanguage", "en");
-  await click("確認產品資料");
+  await click("確認訂閱資料");
   assert.match(text(), /已確認/);
   await fill("targetMarket", "HK");
   assert.match(text(), /HKD 78.00/);
@@ -182,7 +215,7 @@ test("DOM A/E/F/G: demo, confirmation, independent language, localized compariso
     "en",
   );
   await fill("outputLanguage", "zh-Hant");
-  await click("確認產品資料");
+  await click("確認訂閱資料");
   await click("生成本地化設計");
   await settle();
   assert.ok(
@@ -201,7 +234,7 @@ test("DOM A/E/F/G: demo, confirmation, independent language, localized compariso
   assert.equal(container.querySelector(".workspace-header .initial-state-badge"), null);
   assert.match(container.querySelector(".generated-side")!.textContent!, /本地化版本・香港/);
   const summary = container.querySelector(".result-summary")!.textContent!;
-  for (const title of ["版面結構", "視覺風格", "重點方案", "文案調整"]) {
+  for (const title of ["價格與計費週期", "試用資格", "行動按鈕文案", "重點方案"]) {
     assert.ok(summary.includes(title));
   }
   assert.doesNotMatch(summary, /layout|theme|featuredPlanId|Demo Simulation/);
@@ -222,11 +255,11 @@ test("DOM D: drafts survive close, invalid price/trial block save; confirmation 
   await mount(<DesignSetup />);
   await click("使用示例訂閱頁面LearnLoop AI");
   await fill("targetMarket", "US");
-  await click("確認產品資料");
+  await click("確認訂閱資料");
   await click("手動填寫");
   await fill("subscriptionPlans.0.price.amountMinor", "-2");
   await fill("trialTerms.eligibility", "");
-  await click("儲存產品資料");
+  await click("儲存草稿");
   assert.ok(
     document.getElementById("subscriptionPlans.0.price.amountMinor-error"),
   );
@@ -247,10 +280,10 @@ test("DOM D: drafts survive close, invalid price/trial block save; confirmation 
   await fill("subscriptionPlans.0.price.amountMinor", "12.34");
   await fill("trialTerms.renewalDisclosure", "Annual renewal USD 79.99. Monthly plan USD 12.34.");
   await fill("trialTerms.eligibility", "Approved new users only.");
-  await click("儲存產品資料");
+  await click("儲存草稿");
   assert.match(text(), /USD 12.34/);
   assert.match(text(), /資料已更新，請重新確認/);
-  await click("確認產品資料");
+  await click("確認訂閱資料");
   assert.match(text(), /已確認/);
   await click("檢視完整輸入資料");
   const json = JSON.parse(
@@ -355,8 +388,8 @@ test("DOM B/C: image reference persists on invalid replacement, requirements sur
   await file("main-product-import", jsonFile(custom));
   await fill("targetMarket", "US");
   await click("以匯入資料取代目前資料");
-  await click("儲存產品資料");
-  await click("確認產品資料");
+  await click("儲存草稿");
+  await click("確認訂閱資料");
   await click("生成本地化設計");
   await settle();
   assert.match(
@@ -422,7 +455,7 @@ test("DOM navigation preserves confirmed result/reference; advanced settings and
   await mount(<DesignSetup />);
   await click("使用示例訂閱頁面LearnLoop AI");
   await fill("targetMarket", "HK");
-  await click("確認產品資料");
+  await click("確認訂閱資料");
   await click("生成本地化設計");
   await settle();
   await act(async () =>
@@ -541,9 +574,10 @@ test("DOM live UI uses local API only, never falls back after error, then render
     await fill("outputLanguage", "zh-Hant");
     await click("手動填寫");
     await fill("subscriptionPlans.1.price.amountMinor", "82.50");
-    await fill("trialTerms.renewalDisclosure", "Annual renewal USD 82.50. Monthly plan USD 9.99.");
-    await click("儲存產品資料");
-    await click("確認產品資料");
+    await fill("trialTerms.eligibility", "僅限 LearnLoop 新訂戶，每人一次，只適用於年付方案。");
+    await fill("trialTerms.renewalDisclosure", "年付方案以每年 USD 82.50 續訂。月付方案為每月 USD 9.99。");
+    await click("儲存草稿");
+    await click("確認訂閱資料");
     await click("生成本地化設計");
     await until(() => text().includes("尚未設定服務端 DeepSeek 密鑰"));
     assert.equal(providerCalls, 0);
@@ -596,7 +630,7 @@ test("DOM HK target keeps USD import separate and shows the current draft after 
   assert.equal((document.getElementById("subscriptionPlans.0.price.amountMinor") as HTMLInputElement).value, "");
   await fill("subscriptionPlans.0.name", "HK Monthly");
   await fill("subscriptionPlans.0.price.amountMinor", "66.00");
-  await click("儲存產品資料");
+  await click("儲存草稿");
   await click("檢視完整輸入資料");
   const info = JSON.parse(container.querySelector('[aria-label="Reviewed InputPayload JSON"]')!.textContent!);
   assert.equal(info.input.subscriptionPlans[0].price.amountMinor, 6600);
@@ -622,8 +656,8 @@ test("DOM add and remove plans independently, preserving the other plan price an
   assert.equal((document.getElementById("subscriptionPlans.0.price.amountMinor") as HTMLInputElement).value, "588.00");
   assert.equal(button("移除方案").disabled, true);
   await fill("trialTerms.renewalDisclosure", "年費方案以 HKD 588.00 續訂。");
-  await click("儲存產品資料");
-  await click("確認產品資料");
+  await click("儲存草稿");
+  await click("確認訂閱資料");
   await click("生成本地化設計");
   await settle();
   assert.equal(container.querySelectorAll(".generated-side .confirmed-plan").length, 1);

@@ -26,6 +26,15 @@ function inputFor(draft = importDraft(modern).draft, market = "HK" as "HK" | "US
 test("one monthly plan and one annual plan both generate with independently confirmed facts", () => {
   for (const market of ["US", "HK"] as const) {
     const input = inputFor(importDraft(modern).draft, market);
+    if (market === "HK") {
+      input.subscriptionPlans[0].name = "年付方案";
+      input.subscriptionPlans[0].trial = {
+        days: 5,
+        eligibility: "適用於新訂戶。",
+        renewalDisclosure: "試用結束後，年付訂閱將自動續訂，除非在試用結束前取消。",
+      };
+      input.benefits = input.benefits.map((benefit) => ({ ...benefit, description: "用自己的筆記練習。" }));
+    }
     assert.equal(input.subscriptionPlans.length, 1);
     assert.deepEqual(validateInput(input), {});
     assert.ok(InputSchema.safeParse(input).success);
@@ -74,6 +83,7 @@ test("legacy USD import preserves HK selection, fills shared facts and cannot pa
 
 test("delivery is versioned, uses the exact plan order and records provenance, audit and mapping", async () => {
   const input = inputFor();
+  input.outputLanguage = "en";
   input.additionalInstructions = "unnecessary private prompt";
   const spec = simulateDesign(input);
   const result = { inputSnapshot: input, sourceId: "source", spec, audit: auditDesign(input, spec), mode: "demo" } as const;
@@ -85,7 +95,7 @@ test("delivery is versioned, uses the exact plan order and records provenance, a
   assert.equal(payload.interactions.mappingComplete, true);
   assert.equal(payload.provenance.mode, "demo");
   assert.equal(payload.provenance.reviewRequired, true);
-  assert.match(payload.terms.trial[0], /5 天免費試用/);
+  assert.match(payload.terms.trial[0], /5-day free trial/);
   assert.doesNotMatch(JSON.stringify(payload), /unnecessary private prompt/);
   assert.ok(deliveryBlock(result, true));
   const invalid = { ...result, audit: { checks: [{ id: "facts", label: "Price", status: "fail" as const, field: "price", reason: "Mismatch" }] } };

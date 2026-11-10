@@ -4,7 +4,7 @@ import { luminance } from "./demoEngine.ts";
 import { trialDetails } from "./paywallContent.ts";
 import type { StudioResult } from "./studioTypes.ts";
 
-export function describeDesignChanges({ spec, inputSnapshot }: StudioResult) {
+export function describeDesignChanges({ spec, inputSnapshot }: StudioResult, uploadedBackground = false) {
   const sections: Record<PageSection, string> = {
     headline: spec.subtitle ? "主標題及補充說明" : "主標題",
     benefits: "會員權益",
@@ -37,7 +37,9 @@ export function describeDesignChanges({ spec, inputSnapshot }: StudioResult) {
     },
     {
       title: "視覺風格",
-      description: "採用" + background + "背景，並以重點色突顯行動按鈕及推薦方案。",
+      description: uploadedBackground ? "已套用上傳的背景圖片及遮罩。按鈕及推薦方案沿用設計重點色。" :
+        "採用" + background + "背景，並以重點色突顯行動按鈕及推薦方案。" +
+          (spec.backgroundPattern === "christmas" ? "頁首加入松枝、雪花及聖誕樹圖案。" : ""),
     },
     {
       title: "重點方案",

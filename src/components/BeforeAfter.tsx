@@ -1,19 +1,31 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MARKET_CONFIG, MARKETS } from "@/lib/designSchema";
+import type { PageSection } from "@/lib/designSchema";
 import type { OriginalSource, StudioResult } from "@/lib/studioTypes";
+import type { StudioBackground } from "@/lib/background";
 import Icon from "./Icon";
 import PaywallPreview from "./PaywallPreview";
 
 export type GeneratedDesign = StudioResult;
 
-export default function BeforeAfter({ source, generated, loading }: {
+export default function BeforeAfter({ source, generated, loading, locate, background }: {
   source: OriginalSource | null;
   generated: StudioResult | null;
   loading: boolean;
+  locate?: { section: PageSection };
+  background?: StudioBackground | null;
 }) {
-  const [selection, setSelection] = useState<{ result: StudioResult | null; tab: "original" | "generated" }>();
-  const tab = selection?.result === generated ? selection.tab : generated ? "generated" : "original";
+  const [selection, setSelection] = useState<{ result: StudioResult | null; tab: "original" | "generated"; locate?: typeof locate }>();
+  const tab = locate && selection?.locate !== locate ? "generated"
+    : selection?.result === generated ? selection.tab : generated ? "generated" : "original";
+  const previewRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!locate || !generated || loading) return;
+    const item = previewRef.current?.querySelector<HTMLElement>(`[data-paywall-section="${locate.section}"]`);
+    item?.scrollIntoView?.({ block: "center" });
+    item?.focus({ preventScroll: true });
+  }, [locate, generated, loading]);
   const image = source?.kind === "image" ? source : null;
   const sourceMarket = source?.sourceMarket?.trim();
   const marketCode = MARKETS.find((market) => market === sourceMarket?.toUpperCase());
@@ -21,8 +33,8 @@ export default function BeforeAfter({ source, generated, loading }: {
   return (
     <>
       <div className="mobile-preview-tabs" role="tablist" aria-label="版本切換">
-        <button type="button" role="tab" aria-selected={tab === "original"} className={tab === "original" ? "active" : ""} onClick={() => setSelection({ result: generated, tab: "original" })}>原始版本</button>
-        <button type="button" role="tab" aria-selected={tab === "generated"} className={tab === "generated" ? "active" : ""} onClick={() => setSelection({ result: generated, tab: "generated" })}>本地化版本</button>
+        <button type="button" role="tab" aria-selected={tab === "original"} className={tab === "original" ? "active" : ""} onClick={() => setSelection({ result: generated, tab: "original", locate })}>原始版本</button>
+        <button type="button" role="tab" aria-selected={tab === "generated"} className={tab === "generated" ? "active" : ""} onClick={() => setSelection({ result: generated, tab: "generated", locate })}>本地化版本</button>
       </div>
       <div className={`phone-comparison initial-comparison show-${tab}`} aria-label="訂閱頁面版本對比">
         <section className="phone-column original-column original-side">
@@ -42,7 +54,7 @@ export default function BeforeAfter({ source, generated, loading }: {
             </div>
           )}
         </section>
-        <section className="phone-column generated-column generated-side">
+        <section className="phone-column generated-column generated-side" ref={previewRef}>
           <div className="phone-label">
             <span>{generated && !loading ? "本地化版本・" + MARKET_CONFIG[generated.inputSnapshot.targetMarket].label : "本地化版本"}</span>
           </div>
@@ -54,7 +66,7 @@ export default function BeforeAfter({ source, generated, loading }: {
               <div className="progress"><i /></div>
             </div>
           ) : generated ? (
-            <PaywallPreview input={generated.inputSnapshot} spec={generated.spec} />
+            <PaywallPreview input={generated.inputSnapshot} spec={generated.spec} focusedSection={locate?.section} background={background} />
           ) : (
             <div className="empty-generated">
               <span><Icon name="wand" size={28} /></span>

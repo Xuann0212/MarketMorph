@@ -94,6 +94,7 @@ export interface DesignSpec {
   layout: "benefits-first" | "plans-first";
   sectionOrder: PageSection[];
   theme: { background: string; surface: string; text: string; accent: string };
+  backgroundPattern?: "christmas";
   featuredPlanId: string;
   planOrder: string[];
   headline: string;

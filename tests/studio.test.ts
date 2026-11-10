@@ -34,9 +34,14 @@ test("demo is deterministic, obeys target prices and never mutates approved fact
   assert.equal(input.subscriptionPlans[0].price.amountMinor, 7800);
   assert.equal(input.subscriptionPlans[1].price.amountMinor, 58800);
   assert.deepEqual(
-    spec.benefitsCopy.map((b) => b.text),
-    input.benefits.map((b) => b.description),
+    spec.benefitsCopy.map((b) => b.benefitId),
+    input.benefits.map((b) => b.id),
   );
+  assert.deepEqual(spec.benefitsCopy.map((b) => b.text), [
+    "用自己的溫習筆記製作練習題。",
+    "透過 AI 輔助解說重溫概念。",
+    "記錄每日學習時段及連續學習日數。",
+  ]);
   assert.ok(
     auditDesign(input, spec).checks.some((c) => c.status === "needs-review"),
   );

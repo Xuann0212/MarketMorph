@@ -8,6 +8,7 @@ import type { GenerationErrorCode, GenerationMeta } from "./generationTypes";
 import type { InputPayload, AuditReport } from "./designSchema";
 import type { OriginalSource, StudioResult } from "./studioTypes";
 import { stableJson } from "./studioTypes";
+import { InspectionSchema } from "./imageInspection";
 export class ClientGenerationError extends Error {
   constructor(
     public code: GenerationErrorCode,
@@ -66,21 +67,8 @@ export async function modelImageCopy(
     throw new ClientGenerationError("PAYLOAD_TOO_LARGE");
   return dataUrl(image);
 }
-export async function generateRealDesign(
-  input: InputPayload,
-  source: OriginalSource,
-  confirmation: string,
-  accessToken: string,
-): Promise<StudioResult> {
-  const sourceInput =
-    source.kind === "demo"
-      ? { kind: "demo", id: source.id }
-      : { kind: "image", id: source.id, dataUrl: await modelImageCopy(source) };
-  const body = JSON.stringify({
-    input,
-    source: sourceInput,
-    confirmation: { confirmed: true, fingerprint: confirmation },
-  });
+async function requestAgent(payload: object, accessToken: string) {
+  const body = JSON.stringify(payload);
   if (new TextEncoder().encode(body).length > MAX_REQUEST_BYTES)
     throw new ClientGenerationError("PAYLOAD_TOO_LARGE");
   let response: Response;
@@ -123,6 +111,30 @@ export async function generateRealDesign(
       typeof result.requestId === "string" ? result.requestId : undefined,
     );
   }
+  return result;
+}
+
+export async function inspectSource(source: Extract<OriginalSource, { kind: "image" }>, accessToken: string) {
+  const dataUrl = await modelImageCopy(source);
+  const result = await requestAgent({ task: "inspect", source: { kind: "image", id: source.id, dataUrl } }, accessToken);
+  const inspection = InspectionSchema.safeParse(result.inspection);
+  if (!inspection.success) throw new ClientGenerationError("DESIGN_INVALID");
+  return inspection.data;
+}
+
+export async function generateRealDesign(
+  input: InputPayload,
+  source: OriginalSource,
+  confirmation: string,
+  accessToken: string,
+): Promise<StudioResult> {
+  const sourceInput =
+    source.kind === "demo"
+      ? { kind: "demo", id: source.id }
+      : { kind: "image", id: source.id, dataUrl: await modelImageCopy(source) };
+  const result = await requestAgent({
+    input, source: sourceInput, confirmation: { confirmed: true, fingerprint: confirmation },
+  }, accessToken);
   try {
     if (
       result.mode !== "live" ||

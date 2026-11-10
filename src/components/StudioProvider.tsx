@@ -5,12 +5,16 @@ import example from "../../public/example_input.json";
 import { parseProductData } from "@/lib/workspaceData";
 import { blankProduct, defaultDesignSettings, toDraft } from "@/lib/productDraft";
 import type { DesignSettings, ProductDraft, TargetSettings } from "@/lib/productDraft";
-import { validateImageMetadata } from "@/lib/studioTypes";
+import { stableJson, validateImageMetadata } from "@/lib/studioTypes";
 import type { OriginalSource, UploadStatus, StudioResult } from "@/lib/studioTypes";
+import { restoreStudioDraft, STUDIO_DRAFT_KEY } from "@/lib/studioDraft";
+import { useStudioBackground } from "./useStudioBackground";
 
 const sampleProduct = toDraft(parseProductData(example));
 
 interface SharedStudio {
+  background: ReturnType<typeof useStudioBackground>;
+  backgroundNeedsUpload: boolean;
   product: ProductDraft;
   setProduct: React.Dispatch<React.SetStateAction<ProductDraft>>;
   target: TargetSettings;
@@ -33,6 +37,12 @@ interface SharedStudio {
   loadImage: (file: File) => Promise<void>;
   removeSource: () => void;
   useDemo: () => void;
+  draftReady: boolean;
+  restoredAt: string;
+  draftError: boolean;
+  forgetDraft: () => void;
+  mode?: "live" | "demo";
+  setMode: (mode: "live" | "demo") => void;
 }
 const Context = createContext<SharedStudio | null>(null);
 export function useStudioSource() {
@@ -41,6 +51,9 @@ export function useStudioSource() {
   return value;
 }
 export default function StudioProvider({ children }: { children: ReactNode }) {
+  const background = useStudioBackground();
+  const hasBackground = Boolean(background.asset);
+  const [backgroundNeedsUpload, setBackgroundNeedsUpload] = useState(false);
   const [source, setSource] = useState<OriginalSource | null>(null);
   const [product, setProduct] = useState(blankProduct);
   const [target, setTarget] = useState<TargetSettings>({ market: "", language: "", languageChosen: false });
@@ -52,6 +65,11 @@ export default function StudioProvider({ children }: { children: ReactNode }) {
   const [instructions, setInstructions] = useState("");
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [uploadError, setUploadError] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
+  const [restoredAt, setRestoredAt] = useState("");
+  const [draftError, setDraftError] = useState(false);
+  const [mode, setMode] = useState<"live" | "demo">();
+  const lastSaved = useRef("");
   const sourceRef = useRef<OriginalSource | null>(null),
     operation = useRef(0);
   function assign(next: OriginalSource | null) {
@@ -72,6 +90,68 @@ export default function StudioProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STUDIO_DRAFT_KEY);
+      const saved = raw ? restoreStudioDraft(raw) : null;
+      if (saved) {
+        const { savedAt, ...snapshot } = saved;
+        lastSaved.current = stableJson(snapshot);
+        sourceRef.current = snapshot.source;
+        setSource(snapshot.source);
+        setProduct(stableJson(snapshot.product) === stableJson(sampleProduct) ? sampleProduct : snapshot.product);
+        setTarget(snapshot.target);
+        setDesign(snapshot.design);
+        setInstructions(snapshot.instructions);
+        setConfirmed(snapshot.confirmed);
+        setResult(snapshot.result);
+        setMode(snapshot.mode);
+        setRestoredAt(savedAt);
+        setBackgroundNeedsUpload(Boolean(snapshot.hadBackground));
+      }
+    } catch {
+      // An unavailable store or an invalid saved draft leaves the workspace usable.
+    }
+    setDraftReady(true);
+  }, []);
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      const blank = !hasBackground && !source && !result && !instructions && !target.market && !target.language &&
+        stableJson(product) === stableJson(blankProduct()) &&
+        stableJson(design) === stableJson(defaultDesignSettings);
+      const snapshot = {
+        product, target, design, instructions, confirmed, mode,
+        source: source?.kind === "demo" ? source : null,
+        result: result && { ...result, meta: undefined, generationDurationMs: undefined },
+        hadBackground: hasBackground || backgroundNeedsUpload,
+      };
+      const content = blank ? "" : stableJson(snapshot);
+      if (content === lastSaved.current) return;
+      if (blank) window.localStorage.removeItem(STUDIO_DRAFT_KEY);
+      else window.localStorage.setItem(STUDIO_DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), ...snapshot }));
+      lastSaved.current = content;
+      setDraftError(false);
+    } catch {
+      setDraftError(true);
+    }
+  }, [draftReady, product, target, design, instructions, confirmed, source, result, mode, hasBackground, backgroundNeedsUpload]);
+  function forgetDraft() {
+    operation.current++;
+    assign(null);
+    background.remove();
+    setBackgroundNeedsUpload(false);
+    setProduct(blankProduct());
+    setTarget({ market: "", language: "", languageChosen: false });
+    setDesign(defaultDesignSettings);
+    setInstructions("");
+    setConfirmed("");
+    setResult(null);
+    setMode(undefined);
+    setRestoredAt("");
+    setUploadStatus("idle");
+    setUploadError("");
+  }
   function useDemo() {
     operation.current++;
     assign({ kind: "demo", id: "learnloop-demo-" + crypto.randomUUID(), sourceMarket: "US", sourceLanguage: "en" });
@@ -135,6 +215,11 @@ export default function StudioProvider({ children }: { children: ReactNode }) {
   return (
     <Context.Provider
       value={{
+        background: {
+          ...background,
+          remove: () => { background.remove(); setBackgroundNeedsUpload(false); },
+        },
+        backgroundNeedsUpload: backgroundNeedsUpload && !hasBackground,
         product,
         setProduct,
         target,
@@ -159,6 +244,12 @@ export default function StudioProvider({ children }: { children: ReactNode }) {
         loadImage,
         removeSource,
         useDemo,
+        draftReady,
+        restoredAt,
+        draftError,
+        forgetDraft,
+        mode,
+        setMode,
       }}
     >
       {children}

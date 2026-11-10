@@ -86,6 +86,7 @@ export default function SourcePicker({ compact = false }: { compact?: boolean })
           )}
         </div>
       )}
+      {!source && <p className="helper">上傳圖片只保留在目前工作階段。生成或辨識前會說明是否傳送至 DeepSeek。</p>}
       {uploadError && (
         <div className="upload-error-state" role="alert">
           <span><Icon name="close" size={18} /></span>

@@ -12,10 +12,12 @@ import {
   callDeepSeek,
 } from "../src/lib/server/deepseek.ts";
 import { prepareModelImage } from "../src/lib/server/modelImage.ts";
-import { MAX_REQUEST_BYTES } from "../src/lib/generationSchema.ts";
+import { MAX_REQUEST_BYTES, validateOutput } from "../src/lib/generationSchema.ts";
 import { parseProductData, selectMarket } from "../src/lib/workspaceData.ts";
 import { productFingerprint } from "../src/lib/studioTypes.ts";
 import { simulateDesign } from "../src/lib/demoEngine.ts";
+import { createDeliverySpec } from "../src/lib/delivery.ts";
+import { wantsChristmasBackground } from "../src/lib/christmasBackground.ts";
 import type { InputPayload } from "../src/lib/designSchema.ts";
 
 const example = JSON.parse(
@@ -74,6 +76,26 @@ function handler(
 ) {
   return createGenerateHandler({ env, fetcher, logger: () => {}, ...settings });
 }
+
+test("image inspection requires workspace access and returns candidates without confirmed facts", async () => {
+  const source = { kind: "image", id: "inspection-fixture", dataUrl: demoImage.dataUrl };
+  const data = { status: "limited", candidates: [{ label: "月費", text: "US$9.99 / month", area: "middle" }] };
+  let calls = 0;
+  const handle = handler(async (_url, init) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    assert.match(body.messages[0].content, /Do not infer currencies/);
+    assert.equal(body.messages[1].content[1].image_url.detail, "original");
+    return provider(JSON.stringify(data));
+  }, { env: () => ({ ...env(), NODE_ENV: "production", MARKETMORPH_ACCESS_TOKEN: "test-code" }) });
+  const body = { task: "inspect", source };
+  assert.equal((await handle(request(body))).status, 403);
+  assert.equal(calls, 0);
+  const result = await handle(request(body, { "x-marketmorph-access-token": "test-code" }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { ok: true, inspection: data });
+  assert.equal(calls, 1);
+});
 
 test("mock official connection: sends original inline image, strict JSON and facts across market/language combinations", async () => {
   for (const [market, language] of [
@@ -381,6 +403,38 @@ test("blank, malformed JSON, extra price fields and invented claims never return
     assert.equal(data.spec, undefined);
   }
 });
+test("uses the selected language for sample terms and attaches requested Christmas artwork to the result", async () => {
+  const p = payload("HK", "en");
+  p.input.additionalInstructions = "請在背景加入聖誕圖案，但不要聖誕老人。";
+  const model = output(p.input);
+  assert.throws(() => validateOutput({ ...model, design: { ...model.design, ctaText: "開始訂閱" } }, p.input), /selected output language/);
+  const response = await handler(async () => provider(JSON.stringify(model)))(request(p));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  const delivered = createDeliverySpec({ ...data, sourceId: p.source.id });
+  assert.equal(delivered.design.backgroundPattern, "christmas");
+  assert.equal(delivered.plans.find((plan) => plan.id === "hk-annual")?.price.amountMinor, 58800);
+  assert.match(delivered.terms.disclosures[0], /HKD 588\.00 per year/);
+  assert.doesNotMatch(delivered.terms.trial[0], /\p{Script=Han}/u);
+  assert.equal(wantsChristmasBackground({ ...p.input, additionalInstructions: "背景不要使用聖誕圖案。" }), false);
+});
+
+test("normalizes the model's misplaced visual analysis without relaxing design validation", async () => {
+  const p = payload("HK", "zh-Hant");
+  const base = output(p.input);
+  const nested = { design: { ...base.design, visualAnalysis: base.visualAnalysis } };
+  for (const content of [
+    JSON.stringify(nested).slice(0, -1),
+    JSON.stringify({ ...nested, visualAnalysis: base.visualAnalysis }),
+  ]) {
+    const response = await handler(async () => provider(content))(request(p));
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.deepEqual(result.spec, base.design);
+    assert.equal(result.meta.calls.length, 1);
+  }
+});
+
 test("bounded repair succeeds on second request; logs actual failed and successful usage", async () => {
   const p = payload();
   let n = 0;

@@ -2,6 +2,8 @@
 import { useState } from "react";
 import type { CheckStatus, StudioResult } from "@/lib/studioTypes";
 import type { AuditReport } from "@/lib/designSchema";
+import { backgroundCheck } from "@/lib/background";
+import type { StudioBackground } from "@/lib/background";
 import Icon from "./Icon";
 import { describeDesignChanges } from "@/lib/designSummary";
 const LABELS: Record<CheckStatus, string> = {
@@ -17,11 +19,17 @@ export default function DesignReview({
   stale,
   open,
   onOpen,
+  onEditIssue,
+  onCompare,
+  background,
 }: {
   result: StudioResult | null;
   stale: boolean;
   open: boolean;
   onOpen: () => void;
+  onEditIssue?: (section: "product" | "brand") => void;
+  onCompare: () => void;
+  background?: StudioBackground | null;
 }) {
   const [running, setRunning] = useState(false),
     [rerun, setRerun] = useState<{
@@ -29,7 +37,10 @@ export default function DesignReview({
       report: AuditReport;
     } | null>(null),
     [error, setError] = useState("");
-  const report = rerun?.source === result ? rerun.report : result?.audit;
+  const baseReport = rerun?.source === result ? rerun.report : result?.audit;
+  const report = background && baseReport
+    ? { checks: [...baseReport.checks.filter((check) => check.id !== "decoration"), backgroundCheck(background)] }
+    : baseReport;
   const overall: CheckStatus = running
     ? "checking"
     : !result
@@ -46,12 +57,9 @@ export default function DesignReview({
     try {
       const { auditDesign } = await import("@/lib/demoEngine");
       const report = auditDesign(result.inputSnapshot, result.spec);
-      if (result.mode === "live")
-        report.checks.push(
-          ...result.audit.checks.filter((check) =>
-            ["vision", "model-copy"].includes(check.id),
-          ),
-        );
+      report.checks.push(...result.audit.checks.filter((check) =>
+        ["vision", "model-copy", "edited-copy"].includes(check.id),
+      ));
       setRerun({
         source: result,
         report,
@@ -69,7 +77,7 @@ export default function DesignReview({
         <div className="audit-row" key={c.id}>
           <div>
             <strong>{c.label}</strong>
-            <p>{c.id === "vision"
+            <p>{c.id === "vision" && result?.meta
               ? result?.meta?.visualAnalysis.status === "limited"
                 ? "原圖部分內容未能清楚辨識，請人工核對。"
                 : "已參考原圖，仍須人工核對辨識結果。"
@@ -86,6 +94,12 @@ export default function DesignReview({
                 </pre>
               </details>
             )}
+            {!stale && c.status === "fail" && onEditIssue && (
+              <button className="text-button" type="button" onClick={() => onEditIssue(
+                ["allowed", "forbidden", "contrast"].includes(c.id) ? "brand" : "product",
+              )}>{["allowed", "forbidden", "contrast"].includes(c.id) ? "調整品牌設定" : "核對訂閱資料"}</button>
+            )}
+            {c.status === "needs-review" && <button type="button" className="text-button" onClick={onCompare}>返回預覽核對</button>}
           </div>
           <span
             className={`state-badge ${c.status === "pass" ? "pass" : c.status === "fail" ? "fail" : "human_review"}`}
@@ -93,7 +107,7 @@ export default function DesignReview({
             {c.status === "pass"
               ? LABELS.pass
               : c.status === "fail"
-                ? LABELS.fail
+                ? "阻擋匯出"
                 : LABELS.human_review}
           </span>
         </div>
@@ -112,7 +126,7 @@ export default function DesignReview({
         <div className="review-card-icon"><Icon name={appearance.icon} size={24} /></div>
         <div className="review-card-copy">
           <div><h3>本地化設計檢查</h3>{!stale && <span role="status">{!result ? "等待生成" : LABELS[overall]}</span>}</div>
-          <p>{result ? "核對訂閱資料與品牌要求，了解 AI 的設計理由。" : "完成本地化設計後，可在這裏查看檢查結果。"}</p>
+          <p>{result ? "核對訂閱資料、品牌限制及需要人工確認的項目。" : "完成本地化設計後，可在這裏查看檢查結果。"}</p>
         </div>
         <button type="button" onClick={onOpen} disabled={!result}>查看檢查結果 <span aria-hidden="true">→</span></button>
       </section>
@@ -149,18 +163,28 @@ export default function DesignReview({
       {result && <>
         <section className="review-detail-panel" id="subscription-checks">
           <h3>訂閱資料檢查</h3>
-          {checks(["schema", "facts", "month", "year", "currency", "trial", "benefits", "model-copy", "vision"])}
+          {checks(["schema", "facts", "language", "month", "year", "currency", "trial", "benefits", "model-copy", "vision", "edited-copy"])}
         </section>
         <section className="review-detail-panel" id="brand-checks">
           <h3>品牌限制檢查</h3>
-          {checks(["allowed", "forbidden", "contrast", "brand-semantic"])}
+          {checks(["allowed", "forbidden", "contrast", "decoration", "uploaded-background", "brand-semantic"])}
           <div className="audit-row"><strong>完整無障礙與法律條款審核</strong><span className="state-badge not_checked">{LABELS.not_checked}</span></div>
         </section>
         <section className="review-detail-panel" id="design-reasons">
           <h3>設計修改原因</h3>
           <p>以下按本次設計的呈現方式整理。</p>
-          {describeDesignChanges(result).map(({ title, description }) => (
+          {describeDesignChanges(result, Boolean(background)).map(({ title, description }) => (
             <div className="reason-row" key={title}><strong>{title}</strong><p>{description}</p></div>
+          ))}
+          {result.mode === "live" && (
+            <details>
+              <summary>查看 AI 的設計說明</summary>
+              <ul>{result.spec.designReasons.filter(({ field }) => field !== "manual-copy")
+                .map(({ reason }, index) => <li key={index}>{reason}</li>)}</ul>
+            </details>
+          )}
+          {result.spec.designReasons.filter(({ field }) => field === "manual-copy").map(({ reason }) => (
+            <div className="reason-row" key={reason}><strong>文案修訂</strong><p>{reason}</p></div>
           ))}
         </section>
       </>}

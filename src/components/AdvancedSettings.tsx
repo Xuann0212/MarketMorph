@@ -6,12 +6,14 @@ export default function AdvancedSettings({
   input,
   errors,
   colorText,
+  aiEnabled,
   onColorChange,
   onChange,
 }: {
   input: InputPayload;
   errors: InputErrors;
   colorText: { allowed: string; forbidden: string };
+  aiEnabled: boolean;
   onColorChange: (key: "allowed" | "forbidden", value: string) => void;
   onChange: (input: InputPayload) => void;
 }) {
@@ -19,10 +21,11 @@ export default function AdvancedSettings({
     <details className="advanced">
       <summary className="advanced-toggle"><span><Icon name="layout" size={18} />進階設定</span><Icon name="chevron" size={17} /></summary>
       <div className="advanced-body">
-        <Field label="品牌風格細節" path="brandStyle" errors={errors}>
+        <Field label="品牌風格細節（僅 AI）" path="brandStyle" errors={errors}>
           <textarea
             {...fieldAttrs("brandStyle", errors)}
             rows={2}
+            disabled={!aiEnabled}
             value={input.brandStyle}
             onChange={(e) => onChange({ ...input, brandStyle: e.target.value })}
           />
@@ -46,13 +49,14 @@ export default function AdvancedSettings({
           使用六位 HEX，以逗號分隔。選擇風格不會覆寫禁止色。
         </p>
         <Field
-          label="背景及其他品牌要求"
+          label="背景及其他品牌要求（僅 AI）"
           path="brandColors.backgroundPreference"
           errors={errors}
         >
           <textarea
             {...fieldAttrs("brandColors.backgroundPreference", errors)}
             rows={2}
+            disabled={!aiEnabled}
             value={input.brandColors.backgroundPreference}
             onChange={(e) =>
               onChange({

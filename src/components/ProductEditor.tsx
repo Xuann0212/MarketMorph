@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import type { InputPayload, SubscriptionPlan, TargetMarket } from "@/lib/designSchema";
 import { MARKET_CONFIG, MAX_PLANS } from "@/lib/designSchema";
 import type { ProductFormDraft } from "@/lib/workspaceData";
@@ -7,11 +8,12 @@ import { blankPlan, emptyTrial } from "@/lib/productDraft";
 import Modal from "./Modal";
 import Field, { fieldAttrs } from "./FormField";
 
-export default function ProductEditor({ open, draft, market, errors, onChange, onClose, onSave }: {
+export default function ProductEditor({ open, draft, market, errors, reference, onChange, onClose, onSave }: {
   open: boolean;
   draft: ProductFormDraft;
   market: TargetMarket | "";
   errors: InputErrors;
+  reference?: ReactNode;
   onChange: (draft: ProductFormDraft) => void;
   onClose: () => void;
   onSave: () => void;
@@ -44,6 +46,7 @@ export default function ProductEditor({ open, draft, market, errors, onChange, o
     <Modal open={open} onClose={onClose} title="編輯產品與訂閱資料" closeLabel="關閉產品資料編輯器">
       <form noValidate onSubmit={(event) => { event.preventDefault(); onSave(); }}>
         <div className="product-editor-fields">
+          {reference}
           {fields.map(([key, label]) => (
             <Field key={key} label={label} path={key} errors={errors}>
               <input {...fieldAttrs(key, errors)} required={key === "productName"} value={input[key]} onChange={(event) => update(key, event.target.value)} />
@@ -58,7 +61,7 @@ export default function ProductEditor({ open, draft, market, errors, onChange, o
               update("benefits", lines.map((description, i) => ({ id: input.benefits[i]?.id ?? crypto.randomUUID(), description })));
             }} />
           </Field>
-          <h3>訂閱方案 {market && "· " + MARKET_CONFIG[market].label}</h3>
+          <h3 id="subscriptionPlans" tabIndex={-1}>訂閱方案 {market && "· " + MARKET_CONFIG[market].label}</h3>
           {!market && <p className="helper">請先選擇目標市場，再填寫該市場價格。</p>}
           {market && plans.map((plan, index) => {
             const prefix = "subscriptionPlans." + index;
@@ -154,7 +157,7 @@ export default function ProductEditor({ open, draft, market, errors, onChange, o
               <button className="text-button" type="button" onClick={() => onChange({ ...draft, days: "0", input: { ...input, trialTerms: emptyTrial() } })}>移除共用試用條款</button>
             </fieldset>
           )}
-          <div className="button-row"><button type="submit" className="primary">儲存產品資料</button></div>
+          <div className="button-row"><button type="submit" className="primary">儲存草稿</button></div>
         </div>
       </form>
     </Modal>

@@ -5,9 +5,12 @@ import {
 } from "../generationSchema.ts";
 import { productFingerprint } from "../studioTypes.ts";
 import { auditDesign } from "../demoEngine.ts";
+import { paywallCopyIssues } from "../paywallContent.ts";
+import { wantsChristmasBackground } from "../christmasBackground.ts";
+import { InspectionRequestSchema } from "../imageInspection.ts";
 import { ERROR_MESSAGES } from "../generationTypes.ts";
 import type { CallRecord } from "../generationTypes.ts";
-import { callDeepSeek, DEEPSEEK_MODEL } from "./deepseek.ts";
+import { callDeepSeek, DEEPSEEK_MODEL, inspectPaywallImage } from "./deepseek.ts";
 import { prepareModelImage } from "./modelImage.ts";
 import { GenerationError } from "./generationError.ts";
 type Environment = Record<string, string | undefined>;
@@ -110,7 +113,20 @@ export function createGenerateHandler(options: HandlerOptions = {}) {
           "local",
       ).toString("hex");
       if (!rateLimit(identity)) throw new GenerationError("RATE_LIMITED", 429);
-      const parsed = GenerateRequestSchema.safeParse(await readJson(request));
+      const data = await readJson(request);
+      if (data?.task === "inspect") {
+        const inspection = InspectionRequestSchema.safeParse(data);
+        if (!inspection.success) throw new GenerationError("IMAGE_INVALID", 422);
+        const apiKey = env.DEEPSEEK_API_KEY?.trim();
+        if (!apiKey) throw new GenerationError("CONFIG_MISSING", 503);
+        const image = await prepareModelImage(inspection.data.source);
+        const candidates = await inspectPaywallImage(image.dataUrl, {
+          apiKey, requestId, fetcher: options.fetcher, timeoutMs: options.timeoutMs, signal: request.signal,
+        });
+        log({ requestId, task: "inspect", success: true, durationMs: Date.now() - start });
+        return Response.json({ ok: true, inspection: candidates }, { headers: { "Cache-Control": "no-store" } });
+      }
+      const parsed = GenerateRequestSchema.safeParse(data);
       if (!parsed.success) {
         const issues = parsed.error.issues;
         if (
@@ -125,6 +141,8 @@ export function createGenerateHandler(options: HandlerOptions = {}) {
         throw new GenerationError("INPUT_INVALID", 422);
       }
       const { input, source, confirmation } = parsed.data;
+      if (Object.keys(paywallCopyIssues(input, "live")).length)
+        throw new GenerationError("INPUT_INVALID", 422);
       if (confirmation.fingerprint !== productFingerprint(input))
         throw new GenerationError("CONFIRMATION_REQUIRED", 422);
       if (
@@ -145,7 +163,10 @@ export function createGenerateHandler(options: HandlerOptions = {}) {
         signal: request.signal,
         onCall: (call) => log({ ...call }),
       });
-      const audit = auditDesign(input, output.design);
+      const spec = output.design;
+      if (wantsChristmasBackground(input)) spec.backgroundPattern = "christmas";
+      else delete spec.backgroundPattern;
+      const audit = auditDesign(input, spec);
       audit.checks.push({
         id: "model-copy",
         label: "模型自由文案與語義",
@@ -178,7 +199,7 @@ export function createGenerateHandler(options: HandlerOptions = {}) {
           ok: true,
           mode: "live",
           inputSnapshot: input,
-          spec: output.design,
+          spec,
           audit,
           meta,
         },
